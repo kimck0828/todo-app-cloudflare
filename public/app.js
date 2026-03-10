@@ -10,6 +10,7 @@ const taskCategorySelect = document.getElementById('task-category-select');
 const taskListContainer = document.getElementById('task-list');
 const addTaskForm = document.getElementById('add-task-form');
 const btnShowCategories = document.getElementById('btn-show-categories');
+const btnThemeToggle = document.getElementById('btn-theme-toggle');
 
 // DOM Elements - Categories View
 const categoriesView = document.getElementById('categories-view');
@@ -20,10 +21,38 @@ const flashMessages = document.getElementById('flash-messages');
 
 // Initialize
 document.addEventListener('DOMContentLoaded', async () => {
+    initTheme();
     await fetchCategories();
     await fetchTasks();
     setupNavigation();
 });
+
+// ==== THEME MANAGEMENT ====
+function initTheme() {
+    const savedTheme = localStorage.getItem('theme') || 'dark';
+    applyTheme(savedTheme);
+
+    if (btnThemeToggle) {
+        btnThemeToggle.addEventListener('click', () => {
+            const currentTheme = document.documentElement.getAttribute('data-theme') || 'dark';
+            const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+            applyTheme(newTheme);
+            localStorage.setItem('theme', newTheme);
+        });
+    }
+}
+
+function applyTheme(theme) {
+    document.documentElement.setAttribute('data-theme', theme);
+    if (btnThemeToggle) {
+        const icon = btnThemeToggle.querySelector('i');
+        if (theme === 'light') {
+            icon.className = 'fas fa-moon'; // Show moon in light mode (to switch back)
+        } else {
+            icon.className = 'fas fa-sun'; // Show sun in dark mode
+        }
+    }
+}
 
 // ==== NAVIGATION ====
 function setupNavigation() {

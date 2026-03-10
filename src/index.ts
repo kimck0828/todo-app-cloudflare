@@ -138,6 +138,7 @@ app.post('/api/categories/add', async (c: Context<{ Bindings: Bindings }>) => {
 
         return c.json({ status: 'success' })
     } catch (error) {
+        console.error('Category Add Error:', error)
         return c.json({ error: 'Failed to add category' }, 500)
     }
 })
