@@ -1,0 +1,12 @@
+name = "todo-app-cloudflare"
+main = "src/index.ts"
+compatibility_date = "2024-03-09"
+
+# Cloudflare Workers Static Assets (新しい簡単な静的ファイル配信機能)
+[assets]
+directory = "./public"
+
+[[d1_databases]]
+binding = "DB" # Hono内で呼び出す名前
+database_name = "todo-db"
+database_id = "9b9a8101-1daa-46d6-9d97-8f68b7ad86b4"

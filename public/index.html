@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>モダンToDoアプリ</title>
+    <!-- PWA Settings -->
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#0f172a">
+    <link rel="apple-touch-icon" href="/icon.svg">
+    <link rel="stylesheet" href="/style.css">
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- FontAwesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- SortableJS -->
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
+</head>
+
+<body>
+    <div class="background-shape shape-1"></div>
+    <div class="background-shape shape-2"></div>
+    <div class="background-shape shape-3"></div>
+
+    <!-- ===== TASKS VIEW ===== -->
+    <div class="container view-container" id="tasks-view">
+        <header>
+            <div class="header-top">
+                <h1>マイタスク</h1>
+                <button class="btn-manage-categories" id="btn-show-categories" title="カテゴリ管理" aria-label="カテゴリ管理">
+                    <i class="fas fa-sliders-h"></i>
+                </button>
+            </div>
+            <p>今日の予定は何ですか？</p>
+
+            <div class="category-tabs" id="category-tabs">
+                <!-- Tabs will be rendered here via JS -->
+                <span class="category-tab active" data-id="">すべて</span>
+            </div>
+        </header>
+
+        <form id="add-task-form" class="add-task-form">
+            <input type="text" id="task-input" placeholder="新しいタスクを追加..." required autocomplete="off">
+            <select id="task-category-select" class="category-select" required>
+                <!-- Options will be rendered here via JS -->
+            </select>
+            <div class="deadline-wrapper">
+                <input type="text" class="deadline-display" placeholder="期限を選択 (任意)" readonly tabindex="-1">
+                <input type="date" id="deadline-input" class="deadline-input">
+            </div>
+            <button type="submit" class="btn-add"><i class="fas fa-plus"></i></button>
+        </form>
+
+        <ul class="task-list" id="task-list">
+            <!-- Tasks will be rendered here via JS -->
+            <div class="empty-state">
+                <p>読み込み中...</p>
+            </div>
+        </ul>
+    </div>
+
+
+    <!-- ===== CATEGORIES VIEW ===== -->
+    <div class="container view-container" id="categories-view" style="display: none;">
+        <header>
+            <div class="header-top">
+                <h1>カテゴリ管理</h1>
+                <button class="btn-back" id="btn-back-to-tasks" title="タスクに戻る" aria-label="タスクに戻る"><i
+                        class="fas fa-arrow-left"></i></button>
+            </div>
+            <p>タスクのカテゴリを管理します</p>
+        </header>
+
+        <div id="flash-messages" class="flash-messages"></div>
+
+        <form id="add-category-form" class="add-task-form">
+            <input type="text" id="category-input" placeholder="新しいカテゴリを追加..." required autocomplete="off">
+            <button type="submit" class="btn-add"><i class="fas fa-plus"></i></button>
+        </form>
+
+        <ul class="task-list" id="category-list">
+            <!-- Categories will be rendered here via JS -->
+        </ul>
+    </div>
+
+    <!-- App Logic -->
+    <script src="/app.js"></script>
+</body>
+
+</html>
