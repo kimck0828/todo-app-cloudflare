@@ -1,6 +1,7 @@
 name = "todo-app-cloudflare"
 main = "src/index.ts"
 compatibility_date = "2024-03-09"
+compatibility_flags = ["nodejs_compat"]
 
 # Cloudflare Workers Static Assets (新しい簡単な静的ファイル配信機能)
 [assets]
