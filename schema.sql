@@ -1,5 +1,9 @@
--- Users table (For GitHub/Google OAuth)
+-- Drop tables in correct order to avoid foreign key constraint errors
+DROP TABLE IF EXISTS tasks;
+DROP TABLE IF EXISTS categories;
 DROP TABLE IF EXISTS users;
+
+-- Users table (For GitHub/Google OAuth)
 CREATE TABLE users (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   provider TEXT NOT NULL,          -- 'github' or 'google'
@@ -11,7 +15,6 @@ CREATE TABLE users (
 );
 
 -- Categories table
-DROP TABLE IF EXISTS categories;
 CREATE TABLE categories (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id INTEGER NOT NULL,        -- 追加: ユーザー紐付け
@@ -21,7 +24,6 @@ CREATE TABLE categories (
 );
 
 -- Tasks table
-DROP TABLE IF EXISTS tasks;
 CREATE TABLE tasks (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id INTEGER NOT NULL,        -- 追加: ユーザー紐付け

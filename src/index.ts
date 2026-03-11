@@ -46,8 +46,8 @@ app.use('/api/auth/github/*', async (c, next) => {
         client_secret: c.env.GITHUB_SECRET || 'dummy',
         oauthApp: true,
         scope: ['user:email'],
-        // Cloudflare Workersのローカル環境向けにリダイレクトURIを明示指定します
-        redirect_uri: 'http://localhost:8787/api/auth/github/callback',
+        // Cloudflare Workersのローカル/本番環境で動的にリダイレクトURIを設定します
+        redirect_uri: `${new URL(c.req.url).origin}/api/auth/github/callback`,
     })(c, next)
 })
 
@@ -104,8 +104,8 @@ app.use('/api/auth/google/*', async (c, next) => {
         client_secret: c.env.GOOGLE_SECRET || 'dummy',
         scope: ['openid', 'email', 'profile'],
         prompt: 'select_account',
-        // Cloudflare Workersのローカル環境向けにリダイレクトURIを明示指定します
-        redirect_uri: 'http://localhost:8787/api/auth/google/callback',
+        // Cloudflare Workersのローカル/本番環境で動的にリダイレクトURIを設定します
+        redirect_uri: `${new URL(c.req.url).origin}/api/auth/google/callback`,
     })(c, next)
 })
 
