@@ -2,6 +2,7 @@
 let categories = [];
 let tasks = [];
 let currentCategoryId = null;
+let currentUser = null;
 
 // DOM Elements - Tasks View
 const tasksView = document.getElementById('tasks-view');
@@ -19,12 +20,22 @@ const addCategoryForm = document.getElementById('add-category-form');
 const btnBackToTasks = document.getElementById('btn-back-to-tasks');
 const flashMessages = document.getElementById('flash-messages');
 
+// DOM Elements - Auth & User Info
+const loginOverlay = document.getElementById('login-overlay');
+const userInfo = document.getElementById('user-info');
+const userAvatar = document.getElementById('user-avatar');
+const userName = document.getElementById('user-name');
+const btnLogout = document.getElementById('btn-logout');
+
 // Initialize
 document.addEventListener('DOMContentLoaded', async () => {
     initTheme();
-    await fetchCategories();
-    await fetchTasks();
-    setupNavigation();
+    const isAuth = await fetchAuthStatus();
+    if (isAuth) {
+        await fetchCategories();
+        await fetchTasks();
+        setupNavigation();
+    }
 });
 
 // ==== THEME MANAGEMENT ====
@@ -67,6 +78,17 @@ function setupNavigation() {
         tasksView.style.display = 'block';
         fetchCategories().then(() => fetchTasks()); // Refresh everything
     });
+
+    if (btnLogout) {
+        btnLogout.addEventListener('click', async () => {
+            try {
+                await fetch('/api/auth/logout', { method: 'POST' });
+                window.location.reload();
+            } catch (e) {
+                console.error('Logout error:', e);
+            }
+        });
+    }
 }
 
 function showFlash(message, type = 'error') {
@@ -77,6 +99,32 @@ function showFlash(message, type = 'error') {
 }
 
 // ==== API FETCHERS ====
+async function fetchAuthStatus() {
+    try {
+        const res = await fetch('/api/auth/me');
+        if (res.ok) {
+            const data = await res.json();
+            if (data.user) {
+                currentUser = data.user;
+                loginOverlay.style.display = 'none';
+                userInfo.style.display = 'flex';
+                if (currentUser.avatar_url) {
+                    userAvatar.src = currentUser.avatar_url;
+                } else {
+                    userAvatar.src = 'https://ui-avatars.com/api/?name=' + encodeURIComponent(currentUser.username);
+                }
+                userName.textContent = currentUser.username;
+                return true;
+            }
+        }
+    } catch (e) {
+        console.error('Error fetching auth status:', e);
+    }
+
+    // Not authenticated or error
+    loginOverlay.style.display = 'flex';
+    return false;
+}
 async function fetchCategories() {
     try {
         const res = await fetch('/api/categories');

@@ -2,8 +2,9 @@
 - 概要: Cloudflare Workers (Hono) と D1 (SQLite) を使用したモダンなSPA。Vanilla JS と SortableJS を使用。
 - 最新の仕様: 常に `仕様書.md` と `追加機能アイデア.md` を優先して参照すること。
 
-# コマンド実行ルール (WSL環境特有)
-- 注意: WSL環境での `npx wrangler` コマンドはWindows側が呼ばれてエラーになるため、必ず以下の絶対パスを使用すること。
+# コマンド実行ルール (WSL環境特相当)
+- 注意: WSL環境での `npm` や `npx` コマンドはWindows側が呼ばれてエラーになるため、必ず以下の絶対パスを使用すること。
+    - npmの実行（パッケージインストール等）: `~/.nvm/versions/node/v20.20.1/bin/npm <コマンド>`
     - ローカルサーバー起動: `~/.nvm/versions/node/v20.20.1/bin/npx wrangler dev`
     - テスト実行: `~/.nvm/versions/node/v20.20.1/bin/npx wrangler test`
     - その他の wrangler コマンド: `~/.nvm/versions/node/v20.20.1/bin/npx wrangler <コマンド>`
