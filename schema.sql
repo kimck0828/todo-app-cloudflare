@@ -48,4 +48,21 @@ CREATE TABLE IF NOT EXISTS subtasks (
   display_order INTEGER NOT NULL DEFAULT 0,
   FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
 );
-Core%SAME%
+-- User settings (For notifications)
+CREATE TABLE IF NOT EXISTS user_settings (
+  user_id INTEGER PRIMARY KEY,
+  notifications_enabled BOOLEAN NOT NULL DEFAULT 1,
+  notification_time TEXT NOT NULL DEFAULT '10:00',
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+-- Push subscriptions
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  endpoint TEXT NOT NULL,
+  p256dh TEXT NOT NULL,
+  auth TEXT NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);

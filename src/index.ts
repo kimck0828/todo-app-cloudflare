@@ -18,6 +18,7 @@ import { sign, verify } from 'hono/jwt'
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie'
 import { secureHeaders } from 'hono/secure-headers'
 import { csrf } from 'hono/csrf'
+import * as webpush from 'web-push-browser'
 
 // 環境変数の型定義 (Cloudflare WorkersのBindings)
 type Bindings = {
@@ -27,6 +28,9 @@ type Bindings = {
     GOOGLE_ID: string      // Google OAuth クライアントID
     GOOGLE_SECRET: string  // Google OAuth クライアントシークレット
     JWT_SECRET: string     // 認証用JWTの署名に使用する秘密鍵
+    VAPID_PUBLIC_KEY: string
+    VAPID_PRIVATE_KEY: string
+    DEFAULT_NOTIFICATION_TIME: string
 }
 
 // Honoのコンテキスト変数の型定義
@@ -633,4 +637,233 @@ app.post('/api/categories/reorder', async (c: Context<{ Bindings: Bindings, Vari
     }
 })
 
-export default app
+// --- 通知・アラーム操作 ---
+app.use('/api/notifications/*', authMiddleware)
+
+/**
+ * ユーザー通知設定の取得
+ */
+app.get('/api/notifications/settings', async (c) => {
+    const user = c.get('user')
+    try {
+        let settings = await c.env.DB.prepare('SELECT * FROM user_settings WHERE user_id = ?').bind(user.id).first()
+        if (!settings) {
+            // 初期設定を返す
+            return c.json({
+                notifications_enabled: 1,
+                notification_time: c.env.DEFAULT_NOTIFICATION_TIME || '10:00'
+            })
+        }
+        return c.json(settings)
+    } catch (e) {
+        return c.json({ error: 'Failed to fetch settings' }, 500)
+    }
+})
+
+/**
+ * ユーザー通知設定の更新
+ */
+app.post('/api/notifications/settings', async (c) => {
+    const user = c.get('user')
+    const body = await c.req.json()
+    const { enabled, time } = body
+
+    try {
+        await c.env.DB.prepare(`
+            INSERT INTO user_settings (user_id, notifications_enabled, notification_time)
+            VALUES (?, ?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET
+                notifications_enabled = excluded.notifications_enabled,
+                notification_time = excluded.notification_time
+        `).bind(user.id, enabled ? 1 : 0, time || '10:00').run()
+
+        return c.json({ status: 'success' })
+    } catch (e) {
+        console.error(e)
+        return c.json({ error: 'Failed to update settings' }, 500)
+    }
+})
+
+/**
+ * プッシュサブスクリプションの登録
+ */
+app.post('/api/notifications/subscribe', async (c) => {
+    const user = c.get('user')
+    const subscription = await c.req.json()
+
+    if (!subscription.endpoint || !subscription.keys?.p256dh || !subscription.keys?.auth) {
+        return c.json({ error: 'Invalid subscription' }, 400)
+    }
+
+    try {
+        // 既存の同一エンドポイントを確認または新規登録
+        await c.env.DB.prepare(`
+            INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth)
+            VALUES (?, ?, ?, ?)
+        `).bind(user.id, subscription.endpoint, subscription.keys.p256dh, subscription.keys.auth).run()
+
+        return c.json({ status: 'success' })
+    } catch (e) {
+        console.error(e)
+        return c.json({ error: 'Failed to save subscription' }, 500)
+    }
+})
+
+/**
+ * デバッグ用：今すぐテスト通知を送信
+ */
+app.post('/api/notifications/test', async (c) => {
+    const user = c.get('user')
+    
+    try {
+        const { results: subscriptions } = await c.env.DB.prepare(
+            'SELECT * FROM push_subscriptions WHERE user_id = ?'
+        ).bind(user.id).all()
+
+        if (!subscriptions || subscriptions.length === 0) {
+            return c.json({ error: 'No push subscriptions found for this user.' }, 400)
+        }
+
+        const payload = JSON.stringify({
+            title: 'テスト通知',
+            body: 'これはテスト通知です。正しく届いています！',
+            icon: '/favicon.ico',
+            data: { url: '/' }
+        })
+
+        // VAPID鍵をデシリアライズ
+        const keyPair = await webpush.deserializeVapidKeys({
+            publicKey: c.env.VAPID_PUBLIC_KEY,
+            privateKey: c.env.VAPID_PRIVATE_KEY
+        })
+
+        let successCount = 0;
+        let failCount = 0;
+        let lastError = '';
+
+        for (const sub of subscriptions as any[]) {
+            try {
+                await webpush.sendPushNotification(
+                    keyPair,
+                    {
+                        endpoint: sub.endpoint,
+                        keys: { p256dh: sub.p256dh, auth: sub.auth }
+                    },
+                    'mailto:example@yourdomain.com',
+                    payload
+                )
+                successCount++;
+            } catch (err: any) {
+                console.error(`Test notification failed for sub ${sub.id}:`, err)
+                failCount++;
+                lastError = err.message;
+                if (err.statusCode === 410 || err.statusCode === 404) {
+                    await c.env.DB.prepare('DELETE FROM push_subscriptions WHERE id = ?').bind(sub.id).run()
+                }
+            }
+        }
+
+        if (successCount === 0 && subscriptions.length > 0) {
+            return c.json({ error: `All transmissions failed. Last error: ${lastError}` }, 500)
+        }
+
+        return c.json({ status: 'success', sent: successCount, failed: failCount })
+    } catch (e: any) {
+        console.error('Test notification error:', e);
+        return c.json({ error: e.message }, 500)
+    }
+})
+
+/**
+ * VAPID公開鍵の取得
+ */
+app.get('/api/notifications/vapid-public-key', (c) => {
+    return c.json({ publicKey: c.env.VAPID_PUBLIC_KEY })
+})
+
+// 定期実行（Scheduled Event）ハンドラー
+const scheduledHandler = async (env: Bindings) => {
+    console.log('Running scheduled notification check...')
+    
+    // 現在時刻 (HH:mm 形式)
+    const now = new Date()
+    // 日本時間に調整 (UTC+9)
+    const jstNow = new Date(now.getTime() + (9 * 60 * 60 * 1000))
+    // HH:mm 形式 (例: "10:05")
+    const currentTimeStr = `${String(jstNow.getUTCHours()).padStart(2, '0')}:${String(jstNow.getUTCMinutes()).padStart(2, '0')}`
+
+    try {
+        // 1. 通知設定が有効で、かつ通知時間が現在時刻 (HH:mm) と一致するユーザーを取得
+        const usersToNotify = await env.DB.prepare(`
+            SELECT 
+                u.id as user_id, 
+                s.notification_time,
+                COUNT(t.id) as task_count
+            FROM users u
+            JOIN user_settings s ON u.id = s.user_id
+            JOIN tasks t ON u.id = t.user_id
+            WHERE s.notifications_enabled = 1
+              AND t.completed = 0
+              AND t.deadline = DATE('now', '+9 hours')
+              AND s.notification_time = ?
+            GROUP BY u.id
+        `).bind(currentTimeStr).all()
+
+        if (!usersToNotify.results || usersToNotify.results.length === 0) {
+            console.log(`[${currentTimeStr}] No users to notify at this time.`)
+            return
+        }
+
+        // VAPID鍵をデシリアライズ
+        const keyPair = await webpush.deserializeVapidKeys({
+            publicKey: env.VAPID_PUBLIC_KEY,
+            privateKey: env.VAPID_PRIVATE_KEY
+        })
+
+        for (const userRow of usersToNotify.results as any[]) {
+            const { user_id, task_count } = userRow
+            
+            // ユーザーの全サブスクリプションを取得
+            const { results: subscriptions } = await env.DB.prepare(
+                'SELECT * FROM push_subscriptions WHERE user_id = ?'
+            ).bind(user_id).all()
+
+            const payload = JSON.stringify({
+                title: 'タスクのリマインド',
+                body: `今日が期限のタスクが ${task_count} 件あります。確認をお願いします。`,
+                icon: '/icons/icon-192x192.png',
+                badge: '/icons/badge-72x72.png',
+                data: { url: '/' }
+            })
+
+            for (const sub of subscriptions as any[]) {
+                try {
+                    await webpush.sendPushNotification(
+                        keyPair,
+                        {
+                            endpoint: sub.endpoint,
+                            keys: { p256dh: sub.p256dh, auth: sub.auth }
+                        },
+                        'mailto:example@yourdomain.com',
+                        payload
+                    )
+                } catch (err: any) {
+                    console.error(`Failed to send notification to sub ${sub.id}:`, err)
+                    if (err.statusCode === 410 || err.statusCode === 404) {
+                        // 無効なサブスクリプションを削除
+                        await env.DB.prepare('DELETE FROM push_subscriptions WHERE id = ?').bind(sub.id).run()
+                    }
+                }
+            }
+        }
+    } catch (error) {
+        console.error('Scheduled job error:', error)
+    }
+}
+
+export default {
+    fetch: app.fetch,
+    async scheduled(event: any, env: Bindings, ctx: any) {
+        ctx.waitUntil(scheduledHandler(env))
+    }
+}

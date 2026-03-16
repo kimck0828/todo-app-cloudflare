@@ -56,6 +56,9 @@
                         <button class="btn-action" id="btn-theme-toggle" title="テーマ変更" aria-label="テーマ変更">
                             <i class="fas fa-sun"></i>
                         </button>
+                        <button class="btn-action" id="btn-show-notifications" title="通知設定" aria-label="通知設定">
+                            <i class="fas fa-bell"></i>
+                        </button>
                         <button class="btn-action" id="btn-show-categories" title="カテゴリ管理" aria-label="カテゴリ管理">
                             <i class="fas fa-sliders-h"></i>
                         </button>
@@ -112,6 +115,38 @@
         <ul class="task-list" id="category-list">
             <!-- Categories will be rendered here via JS -->
         </ul>
+    </div>
+
+    <!-- ===== NOTIFICATION SETTINGS MODAL ===== -->
+    <div id="notification-modal" class="modal-overlay" style="display: none;">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h2>通知設定</h2>
+                <button class="btn-close-modal" id="btn-close-notification-modal"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body">
+                <p class="modal-desc">当日が期限のタスクがある場合、指定した時間に通知します。</p>
+                
+                <div class="settings-group">
+                    <label class="switch-label">
+                        <span>通知を有効にする</span>
+                        <input type="checkbox" id="notification-enabled-toggle" class="toggle-switch">
+                    </label>
+                </div>
+
+                <div id="notification-time-section" class="settings-group">
+                    <label for="notification-time-input">通知時間:</label>
+                    <input type="time" id="notification-time-input" class="time-input">
+                </div>
+
+                <div class="settings-footer">
+                    <button class="btn-save-settings" id="btn-save-notification-settings">設定を保存</button>
+                    <button class="btn-action" id="btn-test-notification" style="margin-top: 10px; width: 100%; height: 40px;">
+                        <i class="fas fa-paper-plane"></i> 今すぐテスト通知を送る
+                    </button>
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- App Logic -->

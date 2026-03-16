@@ -1,60 +1,55 @@
-const CACHE_NAME = 'todo-app-cache-v2';
-const ASSETS_TO_CACHE = [
-    '/',
-    '/index.html',
-    '/style.css',
-    '/app.js',
-    '/icon.svg',
-    '/manifest.json'
-];
+/**
+ * TODOアプリ サービスワーカー ( sw.js )
+ * 
+ * 主な役割:
+ * - プッシュ通知の受信 (push イベント)
+ * - 通知クリック時の挙動制御 (notificationclick イベント)
+ */
 
-// Install event: cache assets
-self.addEventListener('install', (event) => {
+self.addEventListener('push', function(event) {
+    if (!event.data) return;
+
+    let data = {};
+    try {
+        data = event.data.json();
+    } catch (e) {
+        data = { title: '通知', body: event.data.text() };
+    }
+
+    const options = {
+        body: data.body || '新しい通知があります',
+        icon: data.icon || '/favicon.ico',
+        badge: data.badge || '/favicon.ico',
+        data: data.data || { url: '/' },
+        vibrate: [100, 50, 100],
+        actions: [
+            { action: 'open', title: 'アプリを開く' },
+            { action: 'close', title: '閉じる' }
+        ]
+    };
+
     event.waitUntil(
-        caches.open(CACHE_NAME).then((cache) => {
-            return cache.addAll(ASSETS_TO_CACHE);
-        }).then(() => self.skipWaiting())
+        self.registration.showNotification(data.title || 'TODOアプリ', options)
     );
 });
 
-// Activate event: clean up old caches
-self.addEventListener('activate', (event) => {
+self.addEventListener('notificationclick', function(event) {
+    event.notification.close();
+
+    const urlToOpen = (event.notification.data && event.notification.data.url) ? event.notification.data.url : '/';
+
     event.waitUntil(
-        caches.keys().then((cacheNames) => {
-            return Promise.all(
-                cacheNames.map((cache) => {
-                    if (cache !== CACHE_NAME) {
-                        return caches.delete(cache);
-                    }
-                })
-            );
-        }).then(() => self.clients.claim())
-    );
-});
-
-// Fetch event: Network-First strategy
-self.addEventListener('fetch', (event) => {
-    // Only handle GET requests
-    if (event.request.method !== 'GET') return;
-    // Ignore API calls so they are always fresh
-    if (event.request.url.includes('/api/')) return;
-
-    event.respondWith(
-        fetch(event.request).then((networkResponse) => {
-            // Update cache with the new network response
-            return caches.open(CACHE_NAME).then((cache) => {
-                if (networkResponse.ok) {
-                    cache.put(event.request, networkResponse.clone());
+        clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function(clientList) {
+            // すでに開いているウィンドウがあればフォーカス、なければ新規オープン
+            for (let i = 0; i < clientList.length; i++) {
+                const client = clientList[i];
+                if (client.url.pathname === urlToOpen && 'focus' in client) {
+                    return client.focus();
                 }
-                return networkResponse;
-            });
-        }).catch(() => {
-            // Fallback to cache if offline
-            return caches.match(event.request).then((cachedResponse) => {
-                if (cachedResponse) {
-                    return cachedResponse;
-                }
-            });
+            }
+            if (clients.openWindow) {
+                return clients.openWindow(urlToOpen);
+            }
         })
     );
 });

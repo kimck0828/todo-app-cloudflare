@@ -23,6 +23,15 @@ const taskListContainer = document.getElementById('task-list');
 const addTaskForm = document.getElementById('add-task-form');
 const btnShowCategories = document.getElementById('btn-show-categories');
 const btnThemeToggle = document.getElementById('btn-theme-toggle');
+const btnShowNotifications = document.getElementById('btn-show-notifications');
+
+// DOM 要素 - 通知設定モーダル
+const notificationModal = document.getElementById('notification-modal');
+const btnCloseNotificationModal = document.getElementById('btn-close-notification-modal');
+const notificationEnabledToggle = document.getElementById('notification-enabled-toggle');
+const notificationTimeInput = document.getElementById('notification-time-input');
+const btnSaveNotificationSettings = document.getElementById('btn-save-notification-settings');
+const notificationTimeSection = document.getElementById('notification-time-section');
 
 // DOM 要素 - カテゴリ管理画面
 const categoriesView = document.getElementById('categories-view');
@@ -49,6 +58,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         await fetchCategories();
         await fetchTasks();
         setupNavigation();
+        initNotifications(); // 通知機能の初期化
     }
 });
 
@@ -104,6 +114,41 @@ function setupNavigation() {
         tasksView.style.display = 'block';
         fetchCategories().then(() => fetchTasks()); // 最新の状態で戻る
     });
+
+    // 通知設定モーダルの開閉
+    if (btnShowNotifications) {
+        btnShowNotifications.addEventListener('click', showNotificationModal);
+    }
+    if (btnCloseNotificationModal) {
+        btnCloseNotificationModal.addEventListener('click', closeNotificationModal);
+    }
+    if (btnSaveNotificationSettings) {
+        btnSaveNotificationSettings.addEventListener('click', saveNotificationSettings);
+    }
+
+    // トグルの状態変化で時間を表示/非表示
+    if (notificationEnabledToggle) {
+        notificationEnabledToggle.addEventListener('change', () => {
+            notificationTimeSection.style.display = notificationEnabledToggle.checked ? 'block' : 'none';
+        });
+    }
+
+    const btnTestNotification = document.getElementById('btn-test-notification');
+    if (btnTestNotification) {
+        btnTestNotification.addEventListener('click', async () => {
+            try {
+                const res = await fetch('/api/notifications/test', { method: 'POST' });
+                const data = await res.json();
+                if (res.ok) {
+                    alert('テスト通知を送信しました。数秒以内に届くか確認してください。');
+                } else {
+                    alert('送信失敗: ' + (data.error || '不明なエラー'));
+                }
+            } catch (e) {
+                alert('通信エラー: ' + e.message);
+            }
+        });
+    }
 
     if (btnLogout) {
         btnLogout.addEventListener('click', async () => {
@@ -726,4 +771,137 @@ if ('serviceWorker' in navigator) {
             console.log('ServiceWorker registration failed: ', err);
         });
     });
+}
+/**
+ * サービスワーカーの登録と通知設定の読み込み
+ */
+async function initNotifications() {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+        if (btnShowNotifications) btnShowNotifications.style.display = 'none';
+        return;
+    }
+
+    try {
+        // サービスワーカーの登録
+        const registration = await navigator.serviceWorker.register('/sw.js');
+        console.log('Service Worker registered with scope:', registration.scope);
+
+        // 現在の設定を取得
+        const res = await fetch('/api/notifications/settings');
+        const settings = await res.json();
+        
+        if (settings) {
+            notificationEnabledToggle.checked = settings.notifications_enabled === 1;
+            notificationTimeInput.value = settings.notification_time || '10:00';
+            notificationTimeSection.style.display = notificationEnabledToggle.checked ? 'block' : 'none';
+        }
+    } catch (e) {
+        console.error('Failed to init notifications:', e);
+    }
+}
+
+/**
+ * 通知設定モーダルを表示
+ */
+function showNotificationModal() {
+    notificationModal.style.display = 'flex';
+}
+
+/**
+ * 通知設定モーダルを閉じる
+ */
+function closeNotificationModal() {
+    notificationModal.style.display = 'none';
+}
+
+/**
+ * 通知設定の保存とプッシュ購読の開始
+ */
+async function saveNotificationSettings() {
+    const enabled = notificationEnabledToggle.checked;
+    const time = notificationTimeInput.value;
+
+    try {
+        if (enabled) {
+            // 通知許可を求める
+            const permission = await Notification.requestPermission();
+            if (permission !== 'granted') {
+                alert('通知が許可されませんでした。ブラウザの設定を確認してください。');
+                return;
+            }
+
+            // プッシュサブスクリプションの登録
+            await subscribeToPush();
+        }
+
+        // サーバーに設定を保存
+        const res = await fetch('/api/notifications/settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ enabled, time })
+        });
+
+        if (!res.ok) {
+            const err = await res.json();
+            throw new Error(err.error || 'Server error during settings update');
+        }
+
+        alert('通知設定を保存しました。');
+        closeNotificationModal();
+    } catch (e) {
+        console.error('Failed to save notification settings:', e);
+        alert('設定の保存に失敗しました：' + e.message);
+    }
+}
+
+/**
+ * Web Pushの購読を開始し、サーバーに送信する
+ */
+async function subscribeToPush() {
+    const registration = await navigator.serviceWorker.ready;
+    
+    // 既存の購読を確認
+    let subscription = await registration.pushManager.getSubscription();
+
+    if (!subscription) {
+        // VAPID公開鍵を取得
+        const res = await fetch('/api/notifications/vapid-public-key');
+        const { publicKey } = await res.json();
+
+        // 購読を開始
+        subscription = await registration.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: urlBase64ToUint8Array(publicKey)
+        });
+    }
+
+    // サーバーにサブスクリプションを登録
+    const res = await fetch('/api/notifications/subscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(subscription.toJSON ? subscription.toJSON() : subscription)
+    });
+
+    if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Server error during subscription');
+    }
+}
+
+/**
+ * VAPID公開鍵(Base64URL)をUint8Arrayに変換するユーティリティ
+ */
+function urlBase64ToUint8Array(base64String) {
+    const padding = '='.repeat((4 - base64String.length % 4) % 4);
+    const base64 = (base64String + padding)
+        .replace(/\-/g, '+')
+        .replace(/_/g, '/');
+
+    const rawData = window.atob(base64);
+    const outputArray = new Uint8Array(rawData.length);
+
+    for (let i = 0; i < rawData.length; ++i) {
+        outputArray[i] = rawData.charCodeAt(i);
+    }
+    return outputArray;
 }

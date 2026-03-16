@@ -13,7 +13,8 @@
   "dependencies": {
     "@cloudflare/kv-asset-handler": "^0.4.2",
     "@hono/oauth-providers": "^0.8.5",
-    "hono": "^4.12.5"
+    "hono": "^4.12.5",
+    "web-push-browser": "^1.4.2"
   },
   "description": "",
   "devDependencies": {
