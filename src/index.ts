@@ -794,6 +794,9 @@ const scheduledHandler = async (env: Bindings) => {
     const jstNow = new Date(now.getTime() + (9 * 60 * 60 * 1000))
     // HH:mm 形式 (例: "10:05")
     const currentTimeStr = `${String(jstNow.getUTCHours()).padStart(2, '0')}:${String(jstNow.getUTCMinutes()).padStart(2, '0')}`
+    const todayDateStr = jstNow.toISOString().split('T')[0] // YYYY-MM-DD
+
+    console.log(`[Scheduled] Checking notifications for Time: ${currentTimeStr}, Date: ${todayDateStr}`)
 
     try {
         // 1. 通知設定が有効で、かつ通知時間が現在時刻 (HH:mm) と一致するユーザーを取得
@@ -807,10 +810,10 @@ const scheduledHandler = async (env: Bindings) => {
             JOIN tasks t ON u.id = t.user_id
             WHERE s.notifications_enabled = 1
               AND t.completed = 0
-              AND t.deadline = DATE('now', '+9 hours')
+              AND t.deadline = ?
               AND s.notification_time = ?
             GROUP BY u.id
-        `).bind(currentTimeStr).all()
+        `).bind(todayDateStr, currentTimeStr).all()
 
         if (!usersToNotify.results || usersToNotify.results.length === 0) {
             console.log(`[${currentTimeStr}] No users to notify at this time.`)
