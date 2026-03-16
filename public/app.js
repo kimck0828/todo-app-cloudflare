@@ -1,10 +1,21 @@
-// State
-let categories = [];
-let tasks = [];
-let currentCategoryId = null;
-let currentUser = null;
+/**
+ * TODOアプリ フロントエンド・メインロジック (Vanilla JS)
+ * 
+ * このファイルは、TODOアプリのUI描画、イベント操作、APIリクエストを制御します。
+ * 主な機能:
+ * - テーマ切り替え (ダーク/ライト)
+ * - タスク、サブタスク、カテゴリの描画 (SPA)
+ * - リアルタイムバリデーション、オートセーブ機能 (デバウンス)
+ * - SortableJS を使用した直感的なドラッグ＆ドロップ並べ替え
+ */
 
-// DOM Elements - Tasks View
+// 状態管理 (グローバル変数)
+let categories = [];      // カテゴリ一覧
+let tasks = [];           // タスク一覧
+let currentCategoryId = null; // 現在選択中のフィルタカテゴリID
+let currentUser = null;    // 現在ログイン中のユーザー情報
+
+// DOM 要素 - タスク表示画面
 const tasksView = document.getElementById('tasks-view');
 const categoryTabsContainer = document.getElementById('category-tabs');
 const taskCategorySelect = document.getElementById('task-category-select');
@@ -13,21 +24,24 @@ const addTaskForm = document.getElementById('add-task-form');
 const btnShowCategories = document.getElementById('btn-show-categories');
 const btnThemeToggle = document.getElementById('btn-theme-toggle');
 
-// DOM Elements - Categories View
+// DOM 要素 - カテゴリ管理画面
 const categoriesView = document.getElementById('categories-view');
 const categoryListContainer = document.getElementById('category-list');
 const addCategoryForm = document.getElementById('add-category-form');
 const btnBackToTasks = document.getElementById('btn-back-to-tasks');
 const flashMessages = document.getElementById('flash-messages');
 
-// DOM Elements - Auth & User Info
+// DOM 要素 - 認証 & ユーザー情報
 const loginOverlay = document.getElementById('login-overlay');
 const userInfo = document.getElementById('user-info');
 const userAvatar = document.getElementById('user-avatar');
 const userName = document.getElementById('user-name');
 const btnLogout = document.getElementById('btn-logout');
 
-// Initialize
+/**
+ * 初期化処理
+ * ページ読み込み時にテーマ設定の復元と認証状態の確認を行います。
+ */
 document.addEventListener('DOMContentLoaded', async () => {
     initTheme();
     const isAuth = await fetchAuthStatus();
@@ -38,7 +52,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 });
 
-// ==== THEME MANAGEMENT ====
+// ==== テーマ管理 ====
+
+/**
+ * テーマの初期化とトグルイベントの設定
+ */
 function initTheme() {
     const savedTheme = localStorage.getItem('theme') || 'dark';
     applyTheme(savedTheme);
@@ -53,30 +71,38 @@ function initTheme() {
     }
 }
 
+/**
+ * 指定されたテーマを適用する
+ * @param {string} theme - 'dark' または 'light'
+ */
 function applyTheme(theme) {
     document.documentElement.setAttribute('data-theme', theme);
     if (btnThemeToggle) {
         const icon = btnThemeToggle.querySelector('i');
         if (theme === 'light') {
-            icon.className = 'fas fa-moon'; // Show moon in light mode (to switch back)
+            icon.className = 'fas fa-moon'; // ライトモード時は月のアイコンを表示（切り替え用）
         } else {
-            icon.className = 'fas fa-sun'; // Show sun in dark mode
+            icon.className = 'fas fa-sun';  // ダークモード時は太陽のアイコンを表示
         }
     }
 }
 
-// ==== NAVIGATION ====
+// ==== ナビゲーション ====
+
+/**
+ * ボタンのクリックイベント（画面遷移・ログアウト）の設定
+ */
 function setupNavigation() {
     btnShowCategories.addEventListener('click', () => {
         tasksView.style.display = 'none';
         categoriesView.style.display = 'block';
-        fetchCategories(); // Refresh categories
+        fetchCategories(); // カテゴリ一覧を最新にする
     });
 
     btnBackToTasks.addEventListener('click', () => {
         categoriesView.style.display = 'none';
         tasksView.style.display = 'block';
-        fetchCategories().then(() => fetchTasks()); // Refresh everything
+        fetchCategories().then(() => fetchTasks()); // 最新の状態で戻る
     });
 
     if (btnLogout) {
@@ -91,14 +117,21 @@ function setupNavigation() {
     }
 }
 
+/**
+ * 一時的な通知メッセージを表示する
+ */
 function showFlash(message, type = 'error') {
-    flashMessages.innerHTML = `<div class="flash-message ${type}">${message}</div>`;
+    flashMessages.innerHTML = `<div class="flash-message ${type}">${escapeHtml(message)}</div>`;
     setTimeout(() => {
         flashMessages.innerHTML = '';
     }, 3000);
 }
 
-// ==== API FETCHERS ====
+// ==== API 通信 ====
+
+/**
+ * ログイン状態の確認とユーザー情報の取得
+ */
 async function fetchAuthStatus() {
     try {
         const res = await fetch('/api/auth/me');
@@ -121,10 +154,14 @@ async function fetchAuthStatus() {
         console.error('Error fetching auth status:', e);
     }
 
-    // Not authenticated or error
+    // 未認証の場合、ログインオーバーレイを表示
     loginOverlay.style.display = 'flex';
     return false;
 }
+
+/**
+ * カテゴリ一覧を取得して各UIを更新
+ */
 async function fetchCategories() {
     try {
         const res = await fetch('/api/categories');
@@ -137,6 +174,9 @@ async function fetchCategories() {
     }
 }
 
+/**
+ * タスク一覧を取得して描画
+ */
 async function fetchTasks() {
     try {
         const url = currentCategoryId ? `/api/tasks?category_id=${currentCategoryId}` : '/api/tasks';
@@ -149,9 +189,11 @@ async function fetchTasks() {
 }
 
 
-// ==== RENDERERS ====
+// ==== UI レンダリング ====
 
-// 1. Category Tabs (Tasks View)
+/**
+ * カテゴリ切り替えボタン（タブ）の描画
+ */
 function renderCategoryTabs() {
     let html = `<span class="category-tab ${!currentCategoryId ? 'active' : ''}" data-id="">すべて</span>`;
 
@@ -162,18 +204,20 @@ function renderCategoryTabs() {
 
     categoryTabsContainer.innerHTML = html;
 
-    // Add click listeners to tabs
+    // タブクリック時のフィルタリング設定
     document.querySelectorAll('.category-tab').forEach(tab => {
         tab.addEventListener('click', (e) => {
             const id = e.target.getAttribute('data-id');
             currentCategoryId = id ? parseInt(id) : null;
             fetchTasks();
-            renderCategoryTabs(); // re-render to update active class
+            renderCategoryTabs(); // アクティブ状態を更新するため再描画
         });
     });
 }
 
-// 2. Category Select Dropdown (Add Task Form)
+/**
+ * タスク追加フォーム内のカテゴリ選択ドロップダウンの描画
+ */
 function renderCategoryOptions() {
     let html = '';
     categories.forEach(cat => {
@@ -183,7 +227,9 @@ function renderCategoryOptions() {
     taskCategorySelect.innerHTML = html;
 }
 
-// 3. Tasks List
+/**
+ * メインタスク一覧の描画
+ */
 function renderTasksList() {
     if (!tasks || tasks.length === 0) {
         taskListContainer.innerHTML = `
@@ -200,6 +246,7 @@ function renderTasksList() {
     now.setHours(0, 0, 0, 0);
 
     tasks.forEach(task => {
+        // 期限が近いかどうかの判定 (本日または過ぎている)
         let isUrgent = false;
         if (task.deadline) {
             const deadlineDate = new Date(task.deadline);
@@ -213,7 +260,7 @@ function renderTasksList() {
         const isCompletedBool = (task.completed === 1 || task.completed === true);
         const categoryBadge = task.category_name ? `<span class="task-category-badge">${escapeHtml(task.category_name)}</span>` : '';
         const urgentClass = (isUrgent && !task.completed) ? 'urgent' : '';
-        const deadlineHtml = task.deadline ? `<span class="task-deadline ${urgentClass}"><i class="far fa-calendar-alt"></i> ${task.deadline}</span>` : '';
+        const deadlineHtml = task.deadline ? `<span class="task-deadline ${urgentClass}"><i class="far fa-calendar-alt"></i> ${escapeHtml(task.deadline)}</span>` : '';
 
         html += `
             <li class="task-item ${isCompletedBool ? 'completed' : ''}" data-id="${task.id}" id="task-${task.id}">
@@ -263,7 +310,7 @@ function renderTasksList() {
 
     taskListContainer.innerHTML = html;
 
-    // Init Sortable for Tasks
+    // タスクの並べ替え設定 (SortableJS)
     new Sortable(taskListContainer, {
         handle: '.drag-handle',
         animation: 150,
@@ -289,11 +336,14 @@ function renderTasksList() {
     });
 }
 
+/**
+ * タスクの詳細表示（アコーディオン）の開閉
+ */
 window.toggleTaskExpand = async function(taskId, event) {
     const el = document.getElementById(`task-${taskId}`);
     const isExpanded = el.classList.contains('expanded');
     
-    // Close other expanded tasks (Optional: for accordion look)
+    // 他のタスクを閉じる (アコーディオンの挙動)
     document.querySelectorAll('.task-item.expanded').forEach(item => {
         if (item.id !== `task-${taskId}`) item.classList.remove('expanded');
     });
@@ -302,10 +352,13 @@ window.toggleTaskExpand = async function(taskId, event) {
         el.classList.remove('expanded');
     } else {
         el.classList.add('expanded');
-        await fetchSubtasks(taskId);
+        await fetchSubtasks(taskId); // 展開時にサブタスクを最新にする
     }
 }
 
+/**
+ * タスク内容の更新（オートセーブ・デバウンス処理）
+ */
 let updateTaskTimeout = null;
 window.debouncedUpdateTask = function(taskId, textarea) {
     if (updateTaskTimeout) clearTimeout(updateTaskTimeout);
@@ -324,12 +377,15 @@ window.debouncedUpdateTask = function(taskId, textarea) {
                     description: textarea.value
                 })
             });
-            // Update local state description without full refresh
+            // ローカル状態のみ更新（再描画せずに入力を維持）
             task.description = textarea.value;
         } catch (e) { console.error('Failed to update memo', e); }
     }, 1000);
 }
 
+/**
+ * サブタスク一覧をサーバーから取得
+ */
 window.fetchSubtasks = async function(taskId) {
     const listContainer = document.getElementById(`subtask-list-${taskId}`);
     try {
@@ -342,6 +398,9 @@ window.fetchSubtasks = async function(taskId) {
     }
 }
 
+/**
+ * 特定タスク配下のサブタスク一覧を描画
+ */
 function renderSubtasks(taskId, subtasks) {
     const listContainer = document.getElementById(`subtask-list-${taskId}`);
     if (!subtasks || subtasks.length === 0) {
@@ -368,7 +427,7 @@ function renderSubtasks(taskId, subtasks) {
     });
     listContainer.innerHTML = html;
 
-    // Init Sortable for Subtasks
+    // サブタスクの並べ替え設定 (SortableJS)
     new Sortable(listContainer, {
         handle: '.subtask-drag-handle',
         animation: 150,
@@ -394,6 +453,9 @@ function renderSubtasks(taskId, subtasks) {
     });
 }
 
+/**
+ * サブタスク名の更新（デバウンス処理）
+ */
 let updateSubtaskTimeout = null;
 window.debouncedUpdateSubtask = function(taskId, subtaskId, input) {
     if (updateSubtaskTimeout) clearTimeout(updateSubtaskTimeout);
@@ -408,6 +470,9 @@ window.debouncedUpdateSubtask = function(taskId, subtaskId, input) {
     }, 1000);
 }
 
+/**
+ * サブタスクの追加
+ */
 window.addSubtask = async function(taskId) {
     const input = document.getElementById(`subtask-input-${taskId}`);
     const title = input.value.trim();
@@ -424,14 +489,17 @@ window.addSubtask = async function(taskId) {
     } catch (e) { console.error(e); }
 }
 
+/**
+ * サブタスクの完了切り替え
+ * すべて完了した場合に親タスクの完了を促す。
+ */
 window.toggleSubtask = async function(taskId, subtaskId) {
     try {
         await fetch(`/api/subtasks/toggle/${subtaskId}`, { method: 'POST' });
         
-        // Refresh subtasks list
         await fetchSubtasks(taskId);
 
-        // Check if all subtasks are completed
+        // すべてのサブタスクが完了したか確認
         const resList = await fetch(`/api/subtasks/${taskId}`);
         const currentSubtasks = await resList.json();
         
@@ -446,6 +514,9 @@ window.toggleSubtask = async function(taskId, subtaskId) {
     } catch (e) { console.error(e); }
 }
 
+/**
+ * サブタスクの削除
+ */
 window.deleteSubtask = async function(taskId, subtaskId) {
     try {
         await fetch(`/api/subtasks/delete/${subtaskId}`, { method: 'POST' });
@@ -453,7 +524,9 @@ window.deleteSubtask = async function(taskId, subtaskId) {
     } catch (e) { console.error(e); }
 }
 
-// 4. Category List (Manage View)
+/**
+ * カテゴリ一覧の描画（管理画面）
+ */
 function renderCategoryList() {
     if (!categories || categories.length === 0) {
         categoryListContainer.innerHTML = `
@@ -484,7 +557,7 @@ function renderCategoryList() {
 
     categoryListContainer.innerHTML = html;
 
-    // Init Sortable for Categories
+    // カテゴリの順序変更設定
     new Sortable(categoryListContainer, {
         handle: '.drag-handle',
         animation: 150,
@@ -511,9 +584,9 @@ function renderCategoryList() {
 
 }
 
-// ==== ACTIONS ====
+// ==== アクション処理 (フォーム操作) ====
 
-// Init Date Input behavior
+// 期限入力フィールドの挙動制御 (プレースホルダ表示用)
 const deadlineInputEl = document.getElementById('deadline-input');
 const deadlineDisplayEl = document.querySelector('.deadline-display');
 
@@ -531,7 +604,9 @@ updateDateInputState();
 deadlineInputEl.addEventListener('input', updateDateInputState);
 deadlineInputEl.addEventListener('change', updateDateInputState);
 
-// Tasks
+/**
+ * タスク追加フォームの送信
+ */
 addTaskForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     const taskInput = document.getElementById('task-input').value;
@@ -552,6 +627,9 @@ addTaskForm.addEventListener('submit', async (e) => {
     } catch (e) { console.error(e); }
 });
 
+/**
+ * タスクの完了状態切り替え
+ */
 window.toggleTask = async function (id) {
     try {
         await fetch(`/api/tasks/toggle/${id}`, { method: 'POST' });
@@ -559,6 +637,9 @@ window.toggleTask = async function (id) {
     } catch (e) { console.error(e); }
 }
 
+/**
+ * タスクの削除
+ */
 window.deleteTask = async function (id) {
     try {
         await fetch(`/api/tasks/delete/${id}`, { method: 'POST' });
@@ -566,7 +647,9 @@ window.deleteTask = async function (id) {
     } catch (e) { console.error(e); }
 }
 
-// Categories
+/**
+ * カテゴリ追加フォームの送信
+ */
 addCategoryForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     const nameInput = document.getElementById('category-input').value;
@@ -582,6 +665,9 @@ addCategoryForm.addEventListener('submit', async (e) => {
     } catch (e) { console.error(e); }
 });
 
+/**
+ * カテゴリの削除
+ */
 window.deleteCategory = async function (id) {
     try {
         const res = await fetch(`/api/categories/delete/${id}`, { method: 'POST' });
@@ -590,11 +676,14 @@ window.deleteCategory = async function (id) {
         if (res.status === 400 && data.error) {
             showFlash(data.error, 'error');
         } else {
-            await fetchCategories(); // Refresh
+            await fetchCategories();
         }
     } catch (e) { console.error(e); }
 }
 
+/**
+ * カテゴリ名の編集（デバウンス処理）
+ */
 let updateCategoryTimeout = null;
 window.debouncedUpdateCategory = function (id, input) {
     if (updateCategoryTimeout) clearTimeout(updateCategoryTimeout);
@@ -605,14 +694,18 @@ window.debouncedUpdateCategory = function (id, input) {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ name: input.value })
             });
-            // Update other relevant UI parts
+            // 変更内容を他のUI（タブや選択肢）にも反映
             if (window.renderCategoryTabs) renderCategoryTabs();
             if (window.renderCategoryOptions) renderCategoryOptions();
         } catch (e) { console.error('Failed to update category', e); }
     }, 1000);
 }
 
-// Utils
+// ==== ユーティリティ ====
+
+/**
+ * HTML文字のエスケープ処理 (XSS対策)
+ */
 function escapeHtml(unsafe) {
     if (!unsafe) return '';
     return unsafe
@@ -624,7 +717,7 @@ function escapeHtml(unsafe) {
         .replace(/'/g, "&#039;");
 }
 
-// ==== SERVICE WORKER REGISTRATION ====
+// ==== サービスワーカーの登録 (PWA対応) ====
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
         navigator.serviceWorker.register('/sw.js').then((registration) => {

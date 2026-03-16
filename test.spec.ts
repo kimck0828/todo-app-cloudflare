@@ -99,7 +99,8 @@ describe('Todo API Tests (Hono + D1)', () => {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'Cookie': `auth_token=${authToken}`
+                'Cookie': `auth_token=${authToken}`,
+                'X-Requested-With': 'XMLHttpRequest'
             },
             body: JSON.stringify({
                 task: 'New APITask',
@@ -127,7 +128,8 @@ describe('Todo API Tests (Hono + D1)', () => {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'Cookie': `auth_token=${authToken}`
+                'Cookie': `auth_token=${authToken}`,
+                'X-Requested-With': 'XMLHttpRequest'
             },
             body: JSON.stringify({ name: 'Test Category' })
         });
@@ -151,7 +153,8 @@ describe('Todo API Tests (Hono + D1)', () => {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'Cookie': `auth_token=${authToken}`
+                'Cookie': `auth_token=${authToken}`,
+                'X-Requested-With': 'XMLHttpRequest'
             },
             body: JSON.stringify({
                 title: 'Updated Title',
@@ -179,11 +182,13 @@ describe('Todo API Tests (Hono + D1)', () => {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'Cookie': `auth_token=${authToken}`
+                'Cookie': `auth_token=${authToken}`,
+                'X-Requested-With': 'XMLHttpRequest'
             },
             body: JSON.stringify({ task_id: task.id, title: 'Sub 1' })
         });
-        await worker.fetch(addReq, env as unknown as Env, createExecutionContext());
+        const addRes = await worker.fetch(addReq, env as unknown as Env, createExecutionContext());
+        expect(addRes.status).toBe(200);
 
         // 3. Get subtasks
         const getReq = new IncomingRequest(`http://localhost/api/subtasks/${task.id}`, {
@@ -197,9 +202,14 @@ describe('Todo API Tests (Hono + D1)', () => {
         // 4. Toggle subtask
         const toggleReq = new IncomingRequest(`http://localhost/api/subtasks/toggle/${subtasks[0].id}`, {
             method: 'POST',
-            headers: { 'Cookie': `auth_token=${authToken}` }
+            headers: { 
+                'Content-Type': 'application/json',
+                'Cookie': `auth_token=${authToken}`,
+                'X-Requested-With': 'XMLHttpRequest'
+            }
         });
         const toggleRes = await worker.fetch(toggleReq, env as unknown as Env, createExecutionContext());
+        expect(toggleRes.status).toBe(200);
         const toggleData = await toggleRes.json() as { completed: boolean };
         expect(toggleData.completed).toBe(true);
     });

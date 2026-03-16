@@ -6,6 +6,7 @@
  * - ユーザー認証 (GitHub/Google OAuth, JWT)
  * - タスク、サブタスク、カテゴリのCRUD操作
  * - Cloudflare D1 (SQLite) データベースとの連携
+ * - Webセキュリティ強化 (Secure Headers, CSRF, Validation)
  */
 
 import { Hono } from 'hono'
@@ -15,25 +16,31 @@ import { githubAuth } from '@hono/oauth-providers/github'
 import { googleAuth } from '@hono/oauth-providers/google'
 import { sign, verify } from 'hono/jwt'
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie'
+import { secureHeaders } from 'hono/secure-headers'
+import { csrf } from 'hono/csrf'
 
-// 環境変数の型定義
+// 環境変数の型定義 (Cloudflare WorkersのBindings)
 type Bindings = {
-    DB: D1Database
-    GITHUB_ID: string
-    GITHUB_SECRET: string
-    GOOGLE_ID: string
-    GOOGLE_SECRET: string
-    JWT_SECRET: string
+    DB: D1Database         // D1 データベースへのコネクション
+    GITHUB_ID: string      // GitHub OAuth クライアントID
+    GITHUB_SECRET: string  // GitHub OAuth クライアントシークレット
+    GOOGLE_ID: string      // Google OAuth クライアントID
+    GOOGLE_SECRET: string  // Google OAuth クライアントシークレット
+    JWT_SECRET: string     // 認証用JWTの署名に使用する秘密鍵
 }
 
-// コンテキスト変数の型定義
+// Honoのコンテキスト変数の型定義
 type Variables = {
-    user: { id: number, username: string, avatar_url: string | null }
-    'user-github': any
-    'user-google': any
+    user: { id: number, username: string, avatar_url: string | null } // ログイン済みユーザー情報
+    'user-github': any   // GitHub OAuth ミドルウェアがセットする一時的なユーザー情報
+    'user-google': any   // Google OAuth ミドルウェアがセットする一時的なユーザー情報
 }
 
 const app = new Hono<{ Bindings: Bindings, Variables: Variables }>()
+
+// ==== セキュリティ設定 ====
+app.use('*', secureHeaders()) // CSP, X-Frame-Options などのセキュリティヘッダーを自動付与
+app.use('*', csrf())          // CSRF（クロスサイトリクエストフォージェリ）対策
 
 // ==== ミドルウェア ====
 
@@ -239,7 +246,9 @@ app.post('/api/tasks/add', async (c: Context<{ Bindings: Bindings, Variables: Va
     const deadline = body.deadline || null
     const categoryId = body.category_id ? parseInt(body.category_id) : null
 
+    // バリデーション
     if (!title) return c.json({ error: 'Title is required' }, 400)
+    if (title.length > 200) return c.json({ error: 'Title must be 200 characters or less' }, 400)
 
     try {
         // 並び順の最大値を取得
@@ -330,7 +339,10 @@ app.post('/api/tasks/update/:id', async (c: Context<{ Bindings: Bindings, Variab
     const body = await c.req.json()
     const { title, deadline, category_id, description } = body
 
+    // バリデーション
     if (!title) return c.json({ error: 'Title is required' }, 400)
+    if (title.length > 200) return c.json({ error: 'Title must be 200 characters or less' }, 400)
+    if (description && description.length > 2000) return c.json({ error: 'Memo must be 2000 characters or less' }, 400)
 
     try {
         const result = await c.env.DB.prepare(
@@ -380,7 +392,9 @@ app.post('/api/subtasks/add', async (c: Context<{ Bindings: Bindings, Variables:
     const body = await c.req.json()
     const { task_id, title } = body
 
+    // バリデーション
     if (!title || !task_id) return c.json({ error: 'Title and Task ID are required' }, 400)
+    if (title.length > 200) return c.json({ error: 'Title must be 200 characters or less' }, 400)
 
     try {
         const task = await c.env.DB.prepare('SELECT id FROM tasks WHERE id = ? AND user_id = ?').bind(task_id, user.id).first()
@@ -456,7 +470,9 @@ app.post('/api/subtasks/update/:id', async (c: Context<{ Bindings: Bindings, Var
     const body = await c.req.json()
     const { title } = body
 
+    // バリデーション
     if (!title) return c.json({ error: 'Title is required' }, 400)
+    if (title.length > 200) return c.json({ error: 'Title must be 200 characters or less' }, 400)
 
     try {
         const subtask = await c.env.DB.prepare(
@@ -524,7 +540,9 @@ app.post('/api/categories/add', async (c: Context<{ Bindings: Bindings, Variable
     const body = await c.req.json().catch(() => ({}))
     const name = body.name
 
+    // バリデーション
     if (!name) return c.json({ error: 'Name is required' }, 400)
+    if (name.length > 50) return c.json({ error: 'Category name must be 50 characters or less' }, 400)
 
     try {
         const maxOrderRes = await c.env.DB.prepare('SELECT MAX(display_order) as max_order FROM categories WHERE user_id = ?').bind(user.id).first()
@@ -551,6 +569,10 @@ app.post('/api/categories/delete/:id', async (c: Context<{ Bindings: Bindings, V
     const id = parseInt(idStr)
 
     try {
+        // 所有権の確認
+        const category = await c.env.DB.prepare('SELECT id FROM categories WHERE id = ? AND user_id = ?').bind(id, user.id).first()
+        if (!category) return c.json({ error: 'Category not found' }, 404)
+
         // 使用中かチェック
         const { results } = await c.env.DB.prepare('SELECT id FROM tasks WHERE category_id = ? AND user_id = ? LIMIT 1').bind(id, user.id).all()
         if (results && results.length > 0) {
@@ -573,7 +595,9 @@ app.post('/api/categories/update/:id', async (c: Context<{ Bindings: Bindings, V
     const body = await c.req.json()
     const { name } = body
 
+    // バリデーション
     if (!name) return c.json({ error: 'Name is required' }, 400)
+    if (name.length > 50) return c.json({ error: 'Category name must be 50 characters or less' }, 400)
 
     try {
         const category = await c.env.DB.prepare('SELECT id FROM categories WHERE id = ? AND user_id = ?').bind(id, user.id).first()
