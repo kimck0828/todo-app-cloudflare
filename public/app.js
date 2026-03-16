@@ -860,20 +860,25 @@ async function saveNotificationSettings() {
 async function subscribeToPush() {
     const registration = await navigator.serviceWorker.ready;
     
+    // VAPID公開鍵を取得
+    const resKey = await fetch('/api/notifications/vapid-public-key');
+    const { publicKey } = await resKey.json();
+    const applicationServerKey = urlBase64ToUint8Array(publicKey);
+
     // 既存の購読を確認
     let subscription = await registration.pushManager.getSubscription();
 
-    if (!subscription) {
-        // VAPID公開鍵を取得
-        const res = await fetch('/api/notifications/vapid-public-key');
-        const { publicKey } = await res.json();
-
-        // 購読を開始
-        subscription = await registration.pushManager.subscribe({
-            userVisibleOnly: true,
-            applicationServerKey: urlBase64ToUint8Array(publicKey)
-        });
+    // 既存の購読がある場合、鍵が一致するか確認（簡易的に常に再購読でも良いが、ここでは未購読の場合のみ新規作成）
+    // 鍵更新を確実にするため、一度解除して再登録する
+    if (subscription) {
+        await subscription.unsubscribe();
     }
+
+    // 新規購読を開始
+    subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: applicationServerKey
+    });
 
     // サーバーにサブスクリプションを登録
     const res = await fetch('/api/notifications/subscribe', {

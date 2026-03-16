@@ -720,9 +720,12 @@ app.post('/api/notifications/test', async (c) => {
             'SELECT * FROM push_subscriptions WHERE user_id = ?'
         ).bind(user.id).all()
 
+        console.log(`Sending test notification to user ${user.id}...`)
         if (!subscriptions || subscriptions.length === 0) {
+            console.warn(`No subscriptions found for user ${user.id}`)
             return c.json({ error: 'No push subscriptions found for this user.' }, 400)
         }
+        console.log(`Found ${subscriptions.length} subscriptions.`)
 
         const payload = JSON.stringify({
             title: 'テスト通知',
@@ -813,6 +816,7 @@ const scheduledHandler = async (env: Bindings) => {
             console.log(`[${currentTimeStr}] No users to notify at this time.`)
             return
         }
+        console.log(`[${currentTimeStr}] Found ${usersToNotify.results.length} users to notify.`)
 
         // VAPID鍵をデシリアライズ
         const keyPair = await webpush.deserializeVapidKeys({
