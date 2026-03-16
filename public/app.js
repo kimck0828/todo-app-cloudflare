@@ -403,7 +403,7 @@ window.fetchSubtasks = async function(taskId) {
  */
 function renderSubtasks(taskId, subtasks) {
     const listContainer = document.getElementById(`subtask-list-${taskId}`);
-    if (!subtasks || subtasks.length === 0) {
+    if (!subtasks || !Array.isArray(subtasks) || subtasks.length === 0) {
         listContainer.innerHTML = '<li class="empty-state" style="padding: 10px 0;">サブタスクはありません</li>';
         return;
     }

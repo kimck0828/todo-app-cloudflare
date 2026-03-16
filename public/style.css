@@ -41,7 +41,6 @@
     --color-scheme: light;
 }
 
-/* 全体リセットとスムーズな遷移設定 */
 * {
     margin: 0;
     padding: 0;
@@ -62,7 +61,7 @@ body {
     padding: 20px;
 }
 
-/* 背景を彩るブラッシュ効果のシェイプ */
+/* Background Shapes Setup */
 .background-shape {
     position: absolute;
     border-radius: 50%;
@@ -96,10 +95,11 @@ body {
     transform: translate(-50%, -50%);
 }
 
-/* グラスモーフィズムコンテナ */
+/* Glassmorphism Container */
 .container {
     width: 100%;
     max-width: 800px;
+    /* Increased from 500px to allow for a single row form */
     background: var(--card-bg);
     backdrop-filter: blur(16px);
     -webkit-backdrop-filter: blur(16px);
@@ -116,13 +116,13 @@ body {
         opacity: 0;
         transform: translateY(30px);
     }
+
     to {
         opacity: 1;
         transform: translateY(0);
     }
 }
 
-/* ヘッダー周り */
 header {
     text-align: center;
     margin-bottom: 30px;
@@ -145,7 +145,18 @@ header h1 {
     margin: 0;
 }
 
-/* ユーザー情報・アクションボタン */
+.header-actions {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 8px;
+}
+
+.header-buttons {
+    display: flex;
+    gap: 12px;
+}
+
 .user-info {
     display: flex;
     align-items: center;
@@ -163,6 +174,11 @@ header h1 {
     object-fit: cover;
 }
 
+.user-name {
+    font-size: 0.9rem;
+    font-weight: 500;
+}
+
 .btn-action,
 .btn-back {
     background: none;
@@ -170,16 +186,24 @@ header h1 {
     cursor: pointer;
     color: var(--text-primary);
     font-size: 1.3rem;
+    text-decoration: none;
     transition: all 0.3s ease;
     opacity: 0.8;
 }
 
-.btn-action:hover {
+.btn-action:hover,
+.btn-back:hover {
     color: var(--warning);
+    opacity: 1;
     transform: rotate(15deg) scale(1.1);
 }
 
-/* カテゴリ切り替えボタン（タブ） */
+header p {
+    color: var(--text-secondary);
+    font-size: 1rem;
+}
+
+/* Category Tabs */
 .category-tabs {
     display: flex;
     gap: 8px;
@@ -194,80 +218,586 @@ header h1 {
     border: 1px solid var(--border-color);
     border-radius: 20px;
     color: var(--text-secondary);
+    text-decoration: none;
     font-size: 0.9rem;
     transition: all 0.3s ease;
     cursor: pointer;
 }
 
-.category-tab:hover {
+a.category-tab:hover {
     background: rgba(255, 255, 255, 0.1);
     color: var(--text-primary);
 }
 
-.category-tab.active {
+span.category-tab.active {
     background: transparent;
     border-color: transparent;
     color: #fbbf24;
+    /* yellow bold */
     font-weight: 700;
     cursor: default;
 }
 
-/* 入力フォーム共通スタイル */
-.add-task-form, .add-category-form {
+/* Input Form */
+.add-task-form {
     display: flex;
     gap: 12px;
     margin-bottom: 30px;
     flex-wrap: wrap;
     width: 100%;
+    box-sizing: border-box;
 }
 
-input[type="text"],
-select,
-textarea {
+#task-input,
+#category-input {
+    flex: 1;
+    min-width: 200px;
+    width: 100%;
     background: var(--input-bg);
     border: 1px solid var(--border-color);
     border-radius: 12px;
-    padding: 12px 16px;
+    padding: 16px 20px;
+    font-size: 1rem;
     color: var(--text-primary);
-    font-family: inherit;
     outline: none;
     transition: all 0.3s ease;
+    font-family: inherit;
+    box-sizing: border-box;
 }
 
-input:focus, select:focus, textarea:focus {
+.category-select {
+    width: auto;
+    min-width: 120px;
+    background: var(--input-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 0 16px;
+    font-size: 0.95rem;
+    color: var(--text-primary);
+    outline: none;
+    transition: all 0.3s ease;
+    font-family: inherit;
+    cursor: pointer;
+    box-sizing: border-box;
+    height: 54px;
+}
+
+.category-select option {
+    background: var(--bg-color);
+    color: var(--text-primary);
+}
+
+#task-input::placeholder,
+#category-input::placeholder,
+.deadline-display::placeholder {
+    color: var(--text-secondary);
+}
+
+#task-input:focus,
+#category-input:focus,
+.deadline-input:focus,
+.deadline-wrapper:focus-within .deadline-display {
     border-color: var(--primary-color);
     box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
 }
 
-/* タスクリストアイテム */
+.deadline-wrapper {
+    position: relative;
+    height: 54px;
+    min-width: 160px;
+    flex: 1;
+}
+
+.deadline-display {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: var(--input-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 0 16px;
+    font-size: 1rem;
+    color: var(--text-primary);
+    outline: none;
+    box-sizing: border-box;
+    cursor: pointer;
+    font-family: inherit;
+    transition: all 0.3s ease;
+}
+
+.deadline-display.has-value {
+    color: transparent;
+}
+
+.deadline-display.has-value::placeholder {
+    color: transparent;
+}
+
+.deadline-input {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: var(--input-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 0 16px;
+    font-size: 1rem;
+    color: var(--text-primary);
+    box-sizing: border-box;
+    font-family: inherit;
+    color-scheme: var(--color-scheme);
+    cursor: pointer;
+    outline: none;
+    transition: opacity 0.2s ease;
+    z-index: 2;
+}
+
+/* Ensure the clickable area of the date covers the entire transparent input block on Webkit browsers */
+.deadline-input::-webkit-calendar-picker-indicator {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    /* Make the icon physically invisible */
+    cursor: pointer;
+}
+
+.deadline-input.is-empty {
+    opacity: 0;
+}
+
+.deadline-input:focus {
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+}
+
+.btn-add {
+    background: var(--primary-color);
+    color: white;
+    border: none;
+    border-radius: 12px;
+    width: 54px;
+    height: 54px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.2rem;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 6px -1px rgba(99, 102, 241, 0.4);
+}
+
+.btn-add:hover {
+    background: var(--primary-hover);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 15px rgba(99, 102, 241, 0.5);
+}
+
+.btn-add:active {
+    transform: translateY(0);
+}
+
+/* Task List */
+.task-list {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
 .task-item {
     display: flex;
+    align-items: center;
     padding: 16px;
     background: rgba(255, 255, 255, 0.03);
     border: 1px solid var(--border-color);
     border-radius: 16px;
     transition: all 0.3s ease;
+    animation: fadeIn 0.4s ease-out forwards;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: scale(0.95);
+    }
+
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
 }
 
 .task-item:hover {
     background: rgba(255, 255, 255, 0.05);
     transform: translateY(-2px);
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+    border-color: rgba(255, 255, 255, 0.2);
 }
 
-/* 完了状態のスタイル (打ち消し線) */
+.toggle-form {
+    display: flex;
+    align-items: center;
+}
+
+.toggle-btn {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 1.4rem;
+    cursor: pointer;
+    margin-right: 16px;
+    transition: color 0.3s ease;
+}
+
+.toggle-btn:hover {
+    color: var(--primary-color);
+}
+
+.task-item.completed .toggle-btn i {
+    color: var(--success);
+}
+
+.task-details {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.task-title-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.task-title {
+    font-size: 1.05rem;
+    transition: all 0.3s ease;
+    word-break: break-all;
+}
+
+.task-category-badge {
+    font-size: 0.75rem;
+    padding: 2px 8px;
+    background: rgba(99, 102, 241, 0.2);
+    color: var(--primary-color);
+    border: 1px solid rgba(99, 102, 241, 0.4);
+    border-radius: 12px;
+    font-weight: 500;
+}
+
+.task-deadline {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.task-deadline.urgent {
+    color: var(--danger);
+    font-weight: 500;
+}
+
 .task-item.completed .task-title {
     text-decoration: line-through !important;
     color: var(--text-secondary);
     opacity: 0.6;
 }
 
-/* サブタスク一覧 */
+.task-item.completed .task-deadline {
+    text-decoration: line-through;
+    color: var(--text-secondary);
+    opacity: 0.6;
+}
+
+.delete-form {
+    display: flex;
+    align-items: center;
+}
+
+.btn-delete {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 1.1rem;
+    cursor: pointer;
+    padding: 8px;
+    border-radius: 8px;
+    transition: all 0.3s ease;
+    opacity: 0;
+}
+
+.task-item:hover .btn-delete {
+    opacity: 1;
+}
+
+.btn-delete:hover {
+    color: var(--danger);
+    background: rgba(239, 68, 68, 0.1);
+}
+
+/* Empty State */
+.empty-state {
+    text-align: center;
+    padding: 40px 0;
+    color: var(--text-secondary);
+}
+
+.empty-icon {
+    font-size: 3rem;
+    margin-bottom: 16px;
+    opacity: 0.5;
+}
+
+.empty-state p {
+    font-size: 1.1rem;
+}
+
+/* Drag and Drop Styling */
+.drag-handle {
+    cursor: grab;
+    color: var(--text-secondary);
+    padding-right: 12px;
+    font-size: 1.2rem;
+    opacity: 0.5;
+    transition: opacity 0.3s ease;
+}
+
+.drag-handle:hover {
+    opacity: 1;
+}
+
+.drag-handle:active {
+    cursor: grabbing;
+}
+
+.sortable-ghost {
+    opacity: 0.4;
+    background: rgba(99, 102, 241, 0.1);
+    border-color: var(--primary-color);
+}
+
+/* Flash Messages */
+.flash-messages {
+    margin-bottom: 20px;
+}
+
+.flash-message {
+    padding: 12px 16px;
+    border-radius: 8px;
+    font-size: 0.95rem;
+    margin-bottom: 10px;
+    text-align: center;
+}
+
+.flash-message.error {
+    background: rgba(239, 68, 68, 0.1);
+    color: var(--danger);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    font-weight: 500;
+}
+
+/* Responsive */
+@media (max-width: 600px) {
+    .container {
+        padding: 30px 20px;
+    }
+
+    header h1 {
+        font-size: 2rem;
+    }
+
+    /* Stack inputs on small screens */
+    #task-input,
+    #category-input {
+        width: 100%;
+        flex: 1 1 100%;
+    }
+
+    .category-select {
+        width: 100%;
+        flex: 1 1 100%;
+        max-width: 100%;
+    }
+
+    /* Wrap deadline and add button together */
+    .deadline-wrapper {
+        width: 100%;
+        flex: 1 1 calc(100% - 70px) !important;
+        max-width: none;
+    }
+
+    .btn-add {
+        width: 54px;
+        flex: 0 0 54px !important;
+    }
+}
+
+/* Login Overlay */
+.login-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(15, 23, 42, 0.8);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    z-index: 100;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.login-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    padding: 40px;
+    border-radius: 24px;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+    text-align: center;
+    animation: slideUp 0.6s ease-out forwards;
+}
+
+.login-card h2 {
+    font-size: 2rem;
+    margin-bottom: 10px;
+}
+
+.login-card p {
+    color: var(--text-secondary);
+    margin-bottom: 30px;
+}
+
+.login-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.btn-login {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 14px 24px;
+    border-radius: 12px;
+    font-size: 1rem;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    border: none;
+    color: white;
+    transition: all 0.3s ease;
+}
+
+.btn-login.github {
+    background: #24292e;
+}
+
+.btn-login.github:hover {
+    background: #1b1f23;
+    transform: translateY(-2px);
+}
+
+.btn-login.google {
+    background: #4285f4;
+}
+
+.btn-login.google:hover {
+    background: #357ae8;
+    transform: translateY(-2px);
+}
+
+/* Task Details Expanded View */
+.task-item {
+    flex-direction: column;
+    align-items: stretch;
+    cursor: pointer;
+}
+
+#category-list .task-item {
+    flex-direction: row;
+    align-items: center;
+}
+
+.task-main-row {
+    display: flex;
+    align-items: center;
+    width: 100%;
+}
+
+.task-expanded-content {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.3s ease-out, padding 0.3s ease;
+    padding: 0 16px;
+    margin-top: 0;
+    border-top: 0 solid var(--border-color);
+}
+
+.task-item.expanded {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.task-item.expanded .task-expanded-content {
+    max-height: 1000px;
+    padding: 16px;
+    margin-top: 12px;
+    border-top: 1px solid var(--border-color);
+}
+
+.detail-section {
+    margin-bottom: 20px;
+}
+
+.detail-section h4 {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.task-description-editor {
+    width: 100%;
+    min-height: 80px;
+    background: var(--input-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 12px;
+    color: var(--text-primary);
+    font-family: inherit;
+    font-size: 0.95rem;
+    resize: vertical;
+    outline: none;
+    transition: all 0.3s ease;
+}
+
+.task-description-editor:focus {
+    border-color: var(--primary-color);
+    background: rgba(255, 255, 255, 0.05);
+}
+
+/* Subtasks */
 .subtask-list {
     list-style: none;
-    margin-top: 10px;
     display: flex;
     flex-direction: column;
     gap: 8px;
+    margin-bottom: 12px;
 }
 
 .subtask-item {
@@ -280,13 +810,87 @@ input:focus, select:focus, textarea:focus {
     gap: 10px;
 }
 
-/* モバイル対応の調整 */
-@media (max-width: 600px) {
-    .container {
-        padding: 20px;
-    }
-    header h1 {
-        font-size: 1.8rem;
-    }
+.subtask-item.completed {
+    opacity: 0.6;
 }
-Core%SAME%
+
+.subtask-item.completed .subtask-title-input {
+    text-decoration: line-through;
+}
+
+.subtask-title {
+    flex: 1;
+    font-size: 0.9rem;
+}
+
+.subtask-toggle {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 1.1rem;
+    cursor: pointer;
+}
+
+.subtask-item.completed .subtask-toggle {
+    color: var(--success);
+}
+
+.btn-subtask-delete {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    padding: 4px;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+}
+
+.subtask-item:hover .btn-subtask-delete {
+    opacity: 1;
+}
+
+.btn-subtask-delete:hover {
+    color: var(--danger);
+}
+
+.add-subtask-row {
+    display: flex;
+    gap: 8px;
+}
+
+.subtask-input {
+    flex: 1;
+    background: var(--input-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 8px 12px;
+    color: var(--text-primary);
+    font-size: 0.9rem;
+    outline: none;
+}
+
+.btn-add-subtask {
+    background: var(--primary-color);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 0 12px;
+    cursor: pointer;
+    font-size: 0.9rem;
+}
+
+.btn-add-subtask:hover {
+    background: var(--primary-hover);
+}
+
+/* カテゴリ管理画面専用の調整 */
+#category-list .task-item {
+    flex-direction: row;
+    align-items: center;
+}
+
+#category-list .btn-delete {
+    opacity: 1 !important; /* カテゴリ管理では消去ボタンを常に表示 */
+    color: var(--danger);
+}
