@@ -1,3 +1,13 @@
+/**
+ * Cloudflare Workers (Hono) バックエンド・サーバー
+ * 
+ * このファイルは、TODOアプリのサーバーサイドロジックを統合しています。
+ * 主な機能:
+ * - ユーザー認証 (GitHub/Google OAuth, JWT)
+ * - タスク、サブタスク、カテゴリのCRUD操作
+ * - Cloudflare D1 (SQLite) データベースとの連携
+ */
+
 import { Hono } from 'hono'
 import type { D1Database } from '@cloudflare/workers-types'
 import type { Context } from 'hono'
@@ -6,6 +16,7 @@ import { googleAuth } from '@hono/oauth-providers/google'
 import { sign, verify } from 'hono/jwt'
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie'
 
+// 環境変数の型定義
 type Bindings = {
     DB: D1Database
     GITHUB_ID: string
@@ -15,6 +26,7 @@ type Bindings = {
     JWT_SECRET: string
 }
 
+// コンテキスト変数の型定義
 type Variables = {
     user: { id: number, username: string, avatar_url: string | null }
     'user-github': any
@@ -23,7 +35,12 @@ type Variables = {
 
 const app = new Hono<{ Bindings: Bindings, Variables: Variables }>()
 
-// ==== Middleware ====
+// ==== ミドルウェア ====
+
+/**
+ * 認証ミドルウェア
+ * CookieからJWTを取得し、検証してユーザー情報をセットします。
+ */
 const authMiddleware = async (c: Context<{ Bindings: Bindings, Variables: Variables }>, next: () => Promise<void>) => {
     const token = getCookie(c, 'auth_token')
     if (!token) {
@@ -38,7 +55,8 @@ const authMiddleware = async (c: Context<{ Bindings: Bindings, Variables: Variab
     }
 }
 
-// ==== Auth Routes ====
+// ==== 認証ルート ====
+
 // --- GitHub OAuth ---
 app.use('/api/auth/github/*', async (c, next) => {
     return githubAuth({
@@ -46,16 +64,18 @@ app.use('/api/auth/github/*', async (c, next) => {
         client_secret: c.env.GITHUB_SECRET || 'dummy',
         oauthApp: true,
         scope: ['user:email'],
-        // Cloudflare Workersのローカル/本番環境で動的にリダイレクトURIを設定します
+        // リダイレクトURIを動的に設定
         redirect_uri: `${new URL(c.req.url).origin}/api/auth/github/callback`,
     })(c, next)
 })
 
 app.get('/api/auth/github', async (c) => {
-    // Redirect happens in middleware
     return c.text('Redirecting...')
 })
 
+/**
+ * GitHub認証コールバック
+ */
 app.get('/api/auth/github/callback', async (c) => {
     const githubUser = c.get('user-github')
     if (!githubUser) {
@@ -63,11 +83,12 @@ app.get('/api/auth/github/callback', async (c) => {
     }
 
     try {
-        // Find or create user
+        // 既存ユーザーの確認
         let dbUser = await c.env.DB.prepare('SELECT * FROM users WHERE provider = ? AND provider_id = ?')
             .bind('github', githubUser.id.toString())
             .first()
 
+        // 新規ユーザー登録
         if (!dbUser) {
             const result = await c.env.DB.prepare('INSERT INTO users (provider, provider_id, username, avatar_url) VALUES (?, ?, ?, ?) RETURNING *')
                 .bind('github', githubUser.id.toString(), githubUser.login || githubUser.name, githubUser.avatar_url)
@@ -75,14 +96,16 @@ app.get('/api/auth/github/callback', async (c) => {
             dbUser = result
         }
 
+        // JWTのサイン
         const payload = {
             id: dbUser!.id,
             username: dbUser!.username,
             avatar_url: dbUser!.avatar_url,
-            exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 7 // 7 days
+            exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 7 // 7日間有効
         }
         const token = await sign(payload, c.env.JWT_SECRET || 'secret', 'HS256')
 
+        // Cookieにセット
         setCookie(c, 'auth_token', token, {
             path: '/',
             httpOnly: true,
@@ -104,7 +127,6 @@ app.use('/api/auth/google/*', async (c, next) => {
         client_secret: c.env.GOOGLE_SECRET || 'dummy',
         scope: ['openid', 'email', 'profile'],
         prompt: 'select_account',
-        // Cloudflare Workersのローカル/本番環境で動的にリダイレクトURIを設定します
         redirect_uri: `${new URL(c.req.url).origin}/api/auth/google/callback`,
     })(c, next)
 })
@@ -113,6 +135,9 @@ app.get('/api/auth/google', async (c) => {
     return c.text('Redirecting...')
 })
 
+/**
+ * Google認証コールバック
+ */
 app.get('/api/auth/google/callback', async (c) => {
     const googleUser = c.get('user-google')
     if (!googleUser) {
@@ -153,7 +178,7 @@ app.get('/api/auth/google/callback', async (c) => {
     }
 })
 
-// --- Me / Logout ---
+// --- ユーザー情報 / ログアウト ---
 app.get('/api/auth/me', async (c) => {
     const token = getCookie(c, 'auth_token')
     if (!token) return c.json({ user: null }, 401)
@@ -171,12 +196,17 @@ app.post('/api/auth/logout', async (c) => {
     return c.json({ status: 'success' })
 })
 
-// ==== API Routes ====
-// Require auth for API routes below
+// ==== API ルート ====
+
+// APIルートには認証を必須とする
 app.use('/api/tasks/*', authMiddleware)
 app.use('/api/categories/*', authMiddleware)
 
-// --- Tasks ---
+// --- タスク操作 ---
+
+/**
+ * タスク一覧取得
+ */
 app.get('/api/tasks', async (c: Context<{ Bindings: Bindings, Variables: Variables }>) => {
     const user = c.get('user')
     const categoryId = c.req.query('category_id')
@@ -199,6 +229,9 @@ app.get('/api/tasks', async (c: Context<{ Bindings: Bindings, Variables: Variabl
     }
 })
 
+/**
+ * 新規タスク追加
+ */
 app.post('/api/tasks/add', async (c: Context<{ Bindings: Bindings, Variables: Variables }>) => {
     const user = c.get('user')
     const body = await c.req.json()
@@ -209,7 +242,7 @@ app.post('/api/tasks/add', async (c: Context<{ Bindings: Bindings, Variables: Va
     if (!title) return c.json({ error: 'Title is required' }, 400)
 
     try {
-        // Get max order per user
+        // 並び順の最大値を取得
         const maxOrderRes = await c.env.DB.prepare('SELECT MAX(display_order) as max_order FROM tasks WHERE user_id = ?').bind(user.id).first()
         const newOrder = ((maxOrderRes?.max_order as number) || 0) + 1
 
@@ -228,6 +261,9 @@ app.post('/api/tasks/add', async (c: Context<{ Bindings: Bindings, Variables: Va
     }
 })
 
+/**
+ * タスク削除
+ */
 app.post('/api/tasks/delete/:id', async (c: Context<{ Bindings: Bindings, Variables: Variables }>) => {
     const user = c.get('user')
     const idStr = c.req.param('id') || '0'
@@ -241,13 +277,15 @@ app.post('/api/tasks/delete/:id', async (c: Context<{ Bindings: Bindings, Variab
     }
 })
 
+/**
+ * タスクの状態（完了/未完了）の切り替え
+ */
 app.post('/api/tasks/toggle/:id', async (c: Context<{ Bindings: Bindings, Variables: Variables }>) => {
     const user = c.get('user')
     const idStr = c.req.param('id') || '0'
     const id = parseInt(idStr)
 
     try {
-        // get current state
         const task = await c.env.DB.prepare('SELECT completed FROM tasks WHERE id = ? AND user_id = ?').bind(id, user.id).first()
         if (!task) return c.json({ error: 'Task not found' }, 404)
 
@@ -260,13 +298,15 @@ app.post('/api/tasks/toggle/:id', async (c: Context<{ Bindings: Bindings, Variab
     }
 })
 
+/**
+ * タスクの並べ替え（バッチ処理）
+ */
 app.post('/api/tasks/reorder', async (c: Context<{ Bindings: Bindings, Variables: Variables }>) => {
     const user = c.get('user')
     const body = await c.req.json()
     const orderData = body.order || []
 
     try {
-        // Using batch statements, restrict update to user_id
         const stmts = orderData.map((item: any) => {
             return c.env.DB.prepare('UPDATE tasks SET display_order = ? WHERE id = ? AND user_id = ?').bind(item.order, item.id, user.id)
         })
@@ -281,6 +321,9 @@ app.post('/api/tasks/reorder', async (c: Context<{ Bindings: Bindings, Variables
     }
 })
 
+/**
+ * タスク内容の更新（タイトル、期限、カテゴリ、メモ）
+ */
 app.post('/api/tasks/update/:id', async (c: Context<{ Bindings: Bindings, Variables: Variables }>) => {
     const user = c.get('user')
     const id = parseInt(c.req.param('id') || '0')
@@ -304,15 +347,18 @@ app.post('/api/tasks/update/:id', async (c: Context<{ Bindings: Bindings, Variab
     }
 })
 
-// --- Subtasks ---
+// --- サブタスク操作 ---
 app.use('/api/subtasks/*', authMiddleware)
 
+/**
+ * 特定タスクのサブタスク一覧取得
+ */
 app.get('/api/subtasks/:task_id', async (c: Context<{ Bindings: Bindings, Variables: Variables }>) => {
     const user = c.get('user')
     const taskId = parseInt(c.req.param('task_id') || '0')
 
     try {
-        // Verify task ownership
+        // 所有権の確認
         const task = await c.env.DB.prepare('SELECT id FROM tasks WHERE id = ? AND user_id = ?').bind(taskId, user.id).first()
         if (!task) return c.json({ error: 'Task not found' }, 404)
 
@@ -326,6 +372,9 @@ app.get('/api/subtasks/:task_id', async (c: Context<{ Bindings: Bindings, Variab
     }
 })
 
+/**
+ * 新規サブタスク追加
+ */
 app.post('/api/subtasks/add', async (c: Context<{ Bindings: Bindings, Variables: Variables }>) => {
     const user = c.get('user')
     const body = await c.req.json()
@@ -334,7 +383,6 @@ app.post('/api/subtasks/add', async (c: Context<{ Bindings: Bindings, Variables:
     if (!title || !task_id) return c.json({ error: 'Title and Task ID are required' }, 400)
 
     try {
-        // Verify task ownership
         const task = await c.env.DB.prepare('SELECT id FROM tasks WHERE id = ? AND user_id = ?').bind(task_id, user.id).first()
         if (!task) return c.json({ error: 'Task not found' }, 404)
 
@@ -356,12 +404,14 @@ app.post('/api/subtasks/add', async (c: Context<{ Bindings: Bindings, Variables:
     }
 })
 
+/**
+ * サブタスクの状態切り替え
+ */
 app.post('/api/subtasks/toggle/:id', async (c: Context<{ Bindings: Bindings, Variables: Variables }>) => {
     const user = c.get('user')
     const id = parseInt(c.req.param('id') || '0')
 
     try {
-        // Verify ownership through join
         const subtask = await c.env.DB.prepare(
             'SELECT subtasks.completed, subtasks.id FROM subtasks JOIN tasks ON subtasks.task_id = tasks.id WHERE subtasks.id = ? AND tasks.user_id = ?'
         ).bind(id, user.id).first()
@@ -377,6 +427,9 @@ app.post('/api/subtasks/toggle/:id', async (c: Context<{ Bindings: Bindings, Var
     }
 })
 
+/**
+ * サブタスク削除
+ */
 app.post('/api/subtasks/delete/:id', async (c: Context<{ Bindings: Bindings, Variables: Variables }>) => {
     const user = c.get('user')
     const id = parseInt(c.req.param('id') || '0')
@@ -394,6 +447,9 @@ app.post('/api/subtasks/delete/:id', async (c: Context<{ Bindings: Bindings, Var
     }
 })
 
+/**
+ * サブタスク名の更新
+ */
 app.post('/api/subtasks/update/:id', async (c: Context<{ Bindings: Bindings, Variables: Variables }>) => {
     const user = c.get('user')
     const id = parseInt(c.req.param('id') || '0')
@@ -403,7 +459,6 @@ app.post('/api/subtasks/update/:id', async (c: Context<{ Bindings: Bindings, Var
     if (!title) return c.json({ error: 'Title is required' }, 400)
 
     try {
-        // Verify ownership through join
         const subtask = await c.env.DB.prepare(
             'SELECT subtasks.id FROM subtasks JOIN tasks ON subtasks.task_id = tasks.id WHERE subtasks.id = ? AND tasks.user_id = ?'
         ).bind(id, user.id).first()
@@ -417,6 +472,9 @@ app.post('/api/subtasks/update/:id', async (c: Context<{ Bindings: Bindings, Var
     }
 })
 
+/**
+ * サブタスクの並べ替え
+ */
 app.post('/api/subtasks/reorder', async (c: Context<{ Bindings: Bindings, Variables: Variables }>) => {
     const user = c.get('user')
     const body = await c.req.json()
@@ -425,7 +483,6 @@ app.post('/api/subtasks/reorder', async (c: Context<{ Bindings: Bindings, Variab
     if (!task_id || !order) return c.json({ error: 'Task ID and order are required' }, 400)
 
     try {
-        // Verify task ownership
         const task = await c.env.DB.prepare('SELECT id FROM tasks WHERE id = ? AND user_id = ?').bind(task_id, user.id).first()
         if (!task) return c.json({ error: 'Task not found' }, 404)
 
@@ -444,7 +501,11 @@ app.post('/api/subtasks/reorder', async (c: Context<{ Bindings: Bindings, Variab
 })
 
 
-// --- Categories ---
+// --- カテゴリ操作 ---
+
+/**
+ * カテゴリ一覧取得
+ */
 app.get('/api/categories', async (c: Context<{ Bindings: Bindings, Variables: Variables }>) => {
     const user = c.get('user')
     try {
@@ -455,6 +516,9 @@ app.get('/api/categories', async (c: Context<{ Bindings: Bindings, Variables: Va
     }
 })
 
+/**
+ * 新規カテゴリ追加
+ */
 app.post('/api/categories/add', async (c: Context<{ Bindings: Bindings, Variables: Variables }>) => {
     const user = c.get('user')
     const body = await c.req.json().catch(() => ({}))
@@ -477,13 +541,17 @@ app.post('/api/categories/add', async (c: Context<{ Bindings: Bindings, Variable
     }
 })
 
+/**
+ * カテゴリ削除
+ * タスクに関連付けられている場合は拒否されます。
+ */
 app.post('/api/categories/delete/:id', async (c: Context<{ Bindings: Bindings, Variables: Variables }>) => {
     const user = c.get('user')
     const idStr = c.req.param('id') || '0'
     const id = parseInt(idStr)
 
     try {
-        // Check if category is in use
+        // 使用中かチェック
         const { results } = await c.env.DB.prepare('SELECT id FROM tasks WHERE category_id = ? AND user_id = ? LIMIT 1').bind(id, user.id).all()
         if (results && results.length > 0) {
             return c.json({ error: '関連付けされているタスクあり' }, 400)
@@ -496,6 +564,9 @@ app.post('/api/categories/delete/:id', async (c: Context<{ Bindings: Bindings, V
     }
 })
 
+/**
+ * カテゴリ名の更新
+ */
 app.post('/api/categories/update/:id', async (c: Context<{ Bindings: Bindings, Variables: Variables }>) => {
     const user = c.get('user')
     const id = parseInt(c.req.param('id') || '0')
@@ -516,6 +587,9 @@ app.post('/api/categories/update/:id', async (c: Context<{ Bindings: Bindings, V
     }
 })
 
+/**
+ * カテゴリの並べ替え
+ */
 app.post('/api/categories/reorder', async (c: Context<{ Bindings: Bindings, Variables: Variables }>) => {
     const user = c.get('user')
     const body = await c.req.json()
