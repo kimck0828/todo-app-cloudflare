@@ -230,7 +230,7 @@ app.post('/api/tasks/add', async (c: Context<{ Bindings: Bindings, Variables: Va
 
 app.post('/api/tasks/delete/:id', async (c: Context<{ Bindings: Bindings, Variables: Variables }>) => {
     const user = c.get('user')
-    const idStr = c.req.param('id')
+    const idStr = c.req.param('id') || '0'
     const id = parseInt(idStr)
 
     try {
@@ -243,7 +243,7 @@ app.post('/api/tasks/delete/:id', async (c: Context<{ Bindings: Bindings, Variab
 
 app.post('/api/tasks/toggle/:id', async (c: Context<{ Bindings: Bindings, Variables: Variables }>) => {
     const user = c.get('user')
-    const idStr = c.req.param('id')
+    const idStr = c.req.param('id') || '0'
     const id = parseInt(idStr)
 
     try {
@@ -281,6 +281,168 @@ app.post('/api/tasks/reorder', async (c: Context<{ Bindings: Bindings, Variables
     }
 })
 
+app.post('/api/tasks/update/:id', async (c: Context<{ Bindings: Bindings, Variables: Variables }>) => {
+    const user = c.get('user')
+    const id = parseInt(c.req.param('id') || '0')
+    const body = await c.req.json()
+    const { title, deadline, category_id, description } = body
+
+    if (!title) return c.json({ error: 'Title is required' }, 400)
+
+    try {
+        const result = await c.env.DB.prepare(
+            'UPDATE tasks SET title = ?, deadline = ?, category_id = ?, description = ? WHERE id = ? AND user_id = ?'
+        ).bind(title, deadline || null, category_id ? parseInt(category_id) : null, description || null, id, user.id).run()
+
+        if (result.success) {
+            return c.json({ status: 'success' })
+        }
+        return c.json({ error: 'Failed to update task' }, 500)
+    } catch (error) {
+        console.error(error)
+        return c.json({ error: 'Database error' }, 500)
+    }
+})
+
+// --- Subtasks ---
+app.use('/api/subtasks/*', authMiddleware)
+
+app.get('/api/subtasks/:task_id', async (c: Context<{ Bindings: Bindings, Variables: Variables }>) => {
+    const user = c.get('user')
+    const taskId = parseInt(c.req.param('task_id') || '0')
+
+    try {
+        // Verify task ownership
+        const task = await c.env.DB.prepare('SELECT id FROM tasks WHERE id = ? AND user_id = ?').bind(taskId, user.id).first()
+        if (!task) return c.json({ error: 'Task not found' }, 404)
+
+        const { results } = await c.env.DB.prepare(
+            'SELECT * FROM subtasks WHERE task_id = ? ORDER BY display_order ASC, id ASC'
+        ).bind(taskId).all()
+        return c.json(results)
+    } catch (error) {
+        console.error(error)
+        return c.json({ error: 'Failed to fetch subtasks' }, 500)
+    }
+})
+
+app.post('/api/subtasks/add', async (c: Context<{ Bindings: Bindings, Variables: Variables }>) => {
+    const user = c.get('user')
+    const body = await c.req.json()
+    const { task_id, title } = body
+
+    if (!title || !task_id) return c.json({ error: 'Title and Task ID are required' }, 400)
+
+    try {
+        // Verify task ownership
+        const task = await c.env.DB.prepare('SELECT id FROM tasks WHERE id = ? AND user_id = ?').bind(task_id, user.id).first()
+        if (!task) return c.json({ error: 'Task not found' }, 404)
+
+        const maxOrderRes = await c.env.DB.prepare('SELECT MAX(display_order) as max_order FROM subtasks WHERE task_id = ?').bind(task_id).first()
+        const newOrder = ((maxOrderRes?.max_order as number) || 0) + 1
+
+        const { success } = await c.env.DB
+            .prepare('INSERT INTO subtasks (task_id, title, display_order) VALUES (?, ?, ?)')
+            .bind(task_id, title, newOrder)
+            .run()
+
+        if (success) {
+            return c.json({ status: 'success' })
+        }
+        return c.json({ error: 'Failed to create subtask' }, 500)
+    } catch (error) {
+        console.error(error)
+        return c.json({ error: 'Database error' }, 500)
+    }
+})
+
+app.post('/api/subtasks/toggle/:id', async (c: Context<{ Bindings: Bindings, Variables: Variables }>) => {
+    const user = c.get('user')
+    const id = parseInt(c.req.param('id') || '0')
+
+    try {
+        // Verify ownership through join
+        const subtask = await c.env.DB.prepare(
+            'SELECT subtasks.completed, subtasks.id FROM subtasks JOIN tasks ON subtasks.task_id = tasks.id WHERE subtasks.id = ? AND tasks.user_id = ?'
+        ).bind(id, user.id).first()
+        if (!subtask) return c.json({ error: 'Subtask not found' }, 404)
+
+        const newCompleted = subtask.completed ? 0 : 1
+        await c.env.DB.prepare('UPDATE subtasks SET completed = ? WHERE id = ?').bind(newCompleted, id).run()
+
+        return c.json({ status: 'success', completed: !!newCompleted })
+    } catch (error) {
+        console.error(error)
+        return c.json({ error: 'Failed to toggle subtask' }, 500)
+    }
+})
+
+app.post('/api/subtasks/delete/:id', async (c: Context<{ Bindings: Bindings, Variables: Variables }>) => {
+    const user = c.get('user')
+    const id = parseInt(c.req.param('id') || '0')
+
+    try {
+        const subtask = await c.env.DB.prepare(
+            'SELECT subtasks.id FROM subtasks JOIN tasks ON subtasks.task_id = tasks.id WHERE subtasks.id = ? AND tasks.user_id = ?'
+        ).bind(id, user.id).first()
+        if (!subtask) return c.json({ error: 'Subtask not found' }, 404)
+
+        await c.env.DB.prepare('DELETE FROM subtasks WHERE id = ?').bind(id).run()
+        return c.json({ status: 'success' })
+    } catch (error) {
+        return c.json({ error: 'Failed to delete subtask' }, 500)
+    }
+})
+
+app.post('/api/subtasks/update/:id', async (c: Context<{ Bindings: Bindings, Variables: Variables }>) => {
+    const user = c.get('user')
+    const id = parseInt(c.req.param('id') || '0')
+    const body = await c.req.json()
+    const { title } = body
+
+    if (!title) return c.json({ error: 'Title is required' }, 400)
+
+    try {
+        // Verify ownership through join
+        const subtask = await c.env.DB.prepare(
+            'SELECT subtasks.id FROM subtasks JOIN tasks ON subtasks.task_id = tasks.id WHERE subtasks.id = ? AND tasks.user_id = ?'
+        ).bind(id, user.id).first()
+        if (!subtask) return c.json({ error: 'Subtask not found' }, 404)
+
+        await c.env.DB.prepare('UPDATE subtasks SET title = ? WHERE id = ?').bind(title, id).run()
+        return c.json({ status: 'success' })
+    } catch (error) {
+        console.error(error)
+        return c.json({ error: 'Failed to update subtask' }, 500)
+    }
+})
+
+app.post('/api/subtasks/reorder', async (c: Context<{ Bindings: Bindings, Variables: Variables }>) => {
+    const user = c.get('user')
+    const body = await c.req.json()
+    const { task_id, order } = body
+
+    if (!task_id || !order) return c.json({ error: 'Task ID and order are required' }, 400)
+
+    try {
+        // Verify task ownership
+        const task = await c.env.DB.prepare('SELECT id FROM tasks WHERE id = ? AND user_id = ?').bind(task_id, user.id).first()
+        if (!task) return c.json({ error: 'Task not found' }, 404)
+
+        const stmts = order.map((item: any) => {
+            return c.env.DB.prepare('UPDATE subtasks SET display_order = ? WHERE id = ? AND task_id = ?').bind(item.order, item.id, task_id)
+        })
+
+        if (stmts.length > 0) {
+            await c.env.DB.batch(stmts)
+        }
+        return c.json({ status: 'success' })
+    } catch (error) {
+        console.error(error)
+        return c.json({ error: 'Failed to reorder subtasks' }, 500)
+    }
+})
+
 
 // --- Categories ---
 app.get('/api/categories', async (c: Context<{ Bindings: Bindings, Variables: Variables }>) => {
@@ -295,7 +457,7 @@ app.get('/api/categories', async (c: Context<{ Bindings: Bindings, Variables: Va
 
 app.post('/api/categories/add', async (c: Context<{ Bindings: Bindings, Variables: Variables }>) => {
     const user = c.get('user')
-    const body = await c.req.json()
+    const body = await c.req.json().catch(() => ({}))
     const name = body.name
 
     if (!name) return c.json({ error: 'Name is required' }, 400)
@@ -309,7 +471,7 @@ app.post('/api/categories/add', async (c: Context<{ Bindings: Bindings, Variable
             .run()
 
         return c.json({ status: 'success' })
-    } catch (error) {
+    } catch (error: any) {
         console.error('Category Add Error:', error)
         return c.json({ error: 'Failed to add category' }, 500)
     }
@@ -317,7 +479,7 @@ app.post('/api/categories/add', async (c: Context<{ Bindings: Bindings, Variable
 
 app.post('/api/categories/delete/:id', async (c: Context<{ Bindings: Bindings, Variables: Variables }>) => {
     const user = c.get('user')
-    const idStr = c.req.param('id')
+    const idStr = c.req.param('id') || '0'
     const id = parseInt(idStr)
 
     try {
@@ -331,6 +493,26 @@ app.post('/api/categories/delete/:id', async (c: Context<{ Bindings: Bindings, V
         return c.json({ status: 'success' })
     } catch (error) {
         return c.json({ error: 'Failed to delete category' }, 500)
+    }
+})
+
+app.post('/api/categories/update/:id', async (c: Context<{ Bindings: Bindings, Variables: Variables }>) => {
+    const user = c.get('user')
+    const id = parseInt(c.req.param('id') || '0')
+    const body = await c.req.json()
+    const { name } = body
+
+    if (!name) return c.json({ error: 'Name is required' }, 400)
+
+    try {
+        const category = await c.env.DB.prepare('SELECT id FROM categories WHERE id = ? AND user_id = ?').bind(id, user.id).first()
+        if (!category) return c.json({ error: 'Category not found' }, 404)
+
+        await c.env.DB.prepare('UPDATE categories SET name = ? WHERE id = ?').bind(name, id).run()
+        return c.json({ status: 'success' })
+    } catch (error) {
+        console.error(error)
+        return c.json({ error: 'Failed to update category' }, 500)
     }
 })
 

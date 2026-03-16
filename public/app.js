@@ -210,37 +210,53 @@ function renderTasksList() {
             }
         }
 
-        const completedClass = task.completed ? 'completed' : '';
-        const checkIcon = task.completed ? '<i class="fas fa-check-circle"></i>' : '<i class="far fa-circle"></i>';
+        const isCompletedBool = (task.completed === 1 || task.completed === true);
         const categoryBadge = task.category_name ? `<span class="task-category-badge">${escapeHtml(task.category_name)}</span>` : '';
         const urgentClass = (isUrgent && !task.completed) ? 'urgent' : '';
-
-        // SQLite boolean maps to 0 or 1, ensure explicit check
-        const isCompletedBool = (task.completed === 1 || task.completed === true);
-
-        let deadlineHtml = '';
-        if (task.deadline) {
-            deadlineHtml = `<span class="task-deadline ${urgentClass}"><i class="far fa-calendar-alt"></i> ${task.deadline}</span>`;
-        }
+        const deadlineHtml = task.deadline ? `<span class="task-deadline ${urgentClass}"><i class="far fa-calendar-alt"></i> ${task.deadline}</span>` : '';
 
         html += `
-            <li class="task-item ${isCompletedBool ? 'completed' : ''}" data-id="${task.id}">
-                <div class="drag-handle"><i class="fas fa-grip-vertical"></i></div>
-                <button class="toggle-btn" aria-label="Toggle Completion" onclick="toggleTask(${task.id})">
-                    ${isCompletedBool ? '<i class="fas fa-check-circle"></i>' : '<i class="far fa-circle"></i>'}
-                </button>
+            <li class="task-item ${isCompletedBool ? 'completed' : ''}" data-id="${task.id}" id="task-${task.id}">
+                <div class="task-main-row" onclick="toggleTaskExpand(${task.id}, event)">
+                    <div class="drag-handle"><i class="fas fa-grip-vertical"></i></div>
+                    <button class="toggle-btn" aria-label="Toggle Completion" onclick="toggleTask(${task.id}); event.stopPropagation();">
+                        ${isCompletedBool ? '<i class="fas fa-check-circle"></i>' : '<i class="far fa-circle"></i>'}
+                    </button>
 
-                <div class="task-details">
-                    <div class="task-title-group">
-                        <span class="task-title">${escapeHtml(task.title)}</span>
-                        ${categoryBadge}
+                    <div class="task-details">
+                        <div class="task-title-group">
+                            <span class="task-title">${escapeHtml(task.title)}</span>
+                            ${categoryBadge}
+                        </div>
+                        ${deadlineHtml}
                     </div>
-                    ${deadlineHtml}
+
+                    <button class="btn-delete" aria-label="Delete Task" onclick="deleteTask(${task.id}); event.stopPropagation();">
+                        <i class="fas fa-trash-alt"></i>
+                    </button>
                 </div>
 
-                <button class="btn-delete" aria-label="Delete Task" onclick="deleteTask(${task.id})">
-                    <i class="fas fa-trash-alt"></i>
-                </button>
+                <div class="task-expanded-content" onclick="event.stopPropagation()">
+                    <div class="detail-section">
+                        <h4><i class="fas fa-sticky-note"></i> メモ</h4>
+                        <textarea class="task-description-editor" 
+                            placeholder="このタスクの詳細メモを入力..." 
+                            oninput="debouncedUpdateTask(${task.id}, this)">${escapeHtml(task.description || '')}</textarea>
+                    </div>
+
+                    <div class="detail-section">
+                        <h4><i class="fas fa-list-ul"></i> サブタスク</h4>
+                        <ul class="subtask-list" id="subtask-list-${task.id}">
+                            <li class="empty-state" style="padding: 10px 0;">読み込み中...</li>
+                        </ul>
+                        <div class="add-subtask-row">
+                            <input type="text" class="subtask-input" id="subtask-input-${task.id}" 
+                                placeholder="サブタスクを追加..."
+                                onkeypress="if(event.key === 'Enter') addSubtask(${task.id})">
+                            <button class="btn-add-subtask" onclick="addSubtask(${task.id})"><i class="fas fa-plus"></i></button>
+                        </div>
+                    </div>
+                </div>
             </li>
         `;
     });
@@ -273,6 +289,170 @@ function renderTasksList() {
     });
 }
 
+window.toggleTaskExpand = async function(taskId, event) {
+    const el = document.getElementById(`task-${taskId}`);
+    const isExpanded = el.classList.contains('expanded');
+    
+    // Close other expanded tasks (Optional: for accordion look)
+    document.querySelectorAll('.task-item.expanded').forEach(item => {
+        if (item.id !== `task-${taskId}`) item.classList.remove('expanded');
+    });
+
+    if (isExpanded) {
+        el.classList.remove('expanded');
+    } else {
+        el.classList.add('expanded');
+        await fetchSubtasks(taskId);
+    }
+}
+
+let updateTaskTimeout = null;
+window.debouncedUpdateTask = function(taskId, textarea) {
+    if (updateTaskTimeout) clearTimeout(updateTaskTimeout);
+    updateTaskTimeout = setTimeout(async () => {
+        const task = tasks.find(t => t.id === taskId);
+        if (!task) return;
+
+        try {
+            await fetch(`/api/tasks/update/${taskId}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    title: task.title,
+                    deadline: task.deadline,
+                    category_id: task.category_id,
+                    description: textarea.value
+                })
+            });
+            // Update local state description without full refresh
+            task.description = textarea.value;
+        } catch (e) { console.error('Failed to update memo', e); }
+    }, 1000);
+}
+
+window.fetchSubtasks = async function(taskId) {
+    const listContainer = document.getElementById(`subtask-list-${taskId}`);
+    try {
+        const res = await fetch(`/api/subtasks/${taskId}`);
+        const subtasks = await res.json();
+        renderSubtasks(taskId, subtasks);
+    } catch (e) {
+        console.error('Error fetching subtasks:', e);
+        listContainer.innerHTML = '<li class="empty-state">エラーが発生しました</li>';
+    }
+}
+
+function renderSubtasks(taskId, subtasks) {
+    const listContainer = document.getElementById(`subtask-list-${taskId}`);
+    if (!subtasks || subtasks.length === 0) {
+        listContainer.innerHTML = '<li class="empty-state" style="padding: 10px 0;">サブタスクはありません</li>';
+        return;
+    }
+
+    let html = '';
+    subtasks.forEach(st => {
+        html += `
+            <li class="subtask-item ${st.completed ? 'completed' : ''}" data-id="${st.id}">
+                <div class="subtask-drag-handle"><i class="fas fa-grip-vertical" style="opacity: 0.3; cursor: grab;"></i></div>
+                <button class="subtask-toggle" onclick="toggleSubtask(${taskId}, ${st.id})">
+                    ${st.completed ? '<i class="fas fa-check-circle"></i>' : '<i class="far fa-circle"></i>'}
+                </button>
+                <input type="text" class="subtask-title-input" value="${escapeHtml(st.title)}" 
+                    oninput="debouncedUpdateSubtask(${taskId}, ${st.id}, this)"
+                    style="flex: 1; background: none; border: none; color: inherit; font-family: inherit; font-size: 0.9rem; outline: none;">
+                <button class="btn-subtask-delete" onclick="deleteSubtask(${taskId}, ${st.id})">
+                    <i class="fas fa-times"></i>
+                </button>
+            </li>
+        `;
+    });
+    listContainer.innerHTML = html;
+
+    // Init Sortable for Subtasks
+    new Sortable(listContainer, {
+        handle: '.subtask-drag-handle',
+        animation: 150,
+        ghostClass: 'sortable-ghost',
+        onEnd: async function () {
+            const items = listContainer.querySelectorAll('.subtask-item');
+            const orderData = [];
+            items.forEach((item, index) => {
+                const id = item.getAttribute('data-id');
+                if (id) {
+                    orderData.push({ id: parseInt(id), order: index + 1 });
+                }
+            });
+
+            try {
+                await fetch('/api/subtasks/reorder', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ task_id: taskId, order: orderData })
+                });
+            } catch (e) { console.error('Error reordering subtasks', e); }
+        }
+    });
+}
+
+let updateSubtaskTimeout = null;
+window.debouncedUpdateSubtask = function(taskId, subtaskId, input) {
+    if (updateSubtaskTimeout) clearTimeout(updateSubtaskTimeout);
+    updateSubtaskTimeout = setTimeout(async () => {
+        try {
+            await fetch(`/api/subtasks/update/${subtaskId}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ title: input.value })
+            });
+        } catch (e) { console.error('Failed to update subtask', e); }
+    }, 1000);
+}
+
+window.addSubtask = async function(taskId) {
+    const input = document.getElementById(`subtask-input-${taskId}`);
+    const title = input.value.trim();
+    if (!title) return;
+
+    try {
+        await fetch('/api/subtasks/add', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ task_id: taskId, title })
+        });
+        input.value = '';
+        await fetchSubtasks(taskId);
+    } catch (e) { console.error(e); }
+}
+
+window.toggleSubtask = async function(taskId, subtaskId) {
+    try {
+        await fetch(`/api/subtasks/toggle/${subtaskId}`, { method: 'POST' });
+        
+        // Refresh subtasks list
+        await fetchSubtasks(taskId);
+
+        // Check if all subtasks are completed
+        const resList = await fetch(`/api/subtasks/${taskId}`);
+        const currentSubtasks = await resList.json();
+        
+        if (currentSubtasks.length > 0 && currentSubtasks.every(st => st.completed)) {
+            if (confirm('すべてのサブタスクが完了しました。親タスクも完了にしますか？')) {
+                const task = tasks.find(t => t.id === taskId);
+                if (task && !task.completed) {
+                    await toggleTask(taskId);
+                }
+            }
+        }
+    } catch (e) { console.error(e); }
+}
+
+window.deleteSubtask = async function(taskId, subtaskId) {
+    try {
+        await fetch(`/api/subtasks/delete/${subtaskId}`, { method: 'POST' });
+        await fetchSubtasks(taskId);
+    } catch (e) { console.error(e); }
+}
+
 // 4. Category List (Manage View)
 function renderCategoryList() {
     if (!categories || categories.length === 0) {
@@ -291,7 +471,9 @@ function renderCategoryList() {
             <li class="task-item" data-id="${cat.id}">
                 <div class="drag-handle"><i class="fas fa-grip-vertical"></i></div>
                 <div class="task-details">
-                    <span class="task-title">${escapeHtml(cat.name)}</span>
+                    <input type="text" class="category-title-input" value="${escapeHtml(cat.name)}" 
+                        oninput="debouncedUpdateCategory(${cat.id}, this)"
+                        style="flex: 1; background: none; border: none; color: inherit; font-family: inherit; font-size: 1rem; outline: none; font-weight: 500;">
                 </div>
                 <button class="btn-delete" aria-label="カテゴリを削除" onclick="deleteCategory(${cat.id})">
                     <i class="fas fa-trash-alt"></i>
@@ -411,6 +593,23 @@ window.deleteCategory = async function (id) {
             await fetchCategories(); // Refresh
         }
     } catch (e) { console.error(e); }
+}
+
+let updateCategoryTimeout = null;
+window.debouncedUpdateCategory = function (id, input) {
+    if (updateCategoryTimeout) clearTimeout(updateCategoryTimeout);
+    updateCategoryTimeout = setTimeout(async () => {
+        try {
+            await fetch(`/api/categories/update/${id}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: input.value })
+            });
+            // Update other relevant UI parts
+            if (window.renderCategoryTabs) renderCategoryTabs();
+            if (window.renderCategoryOptions) renderCategoryOptions();
+        } catch (e) { console.error('Failed to update category', e); }
+    }, 1000);
 }
 
 // Utils

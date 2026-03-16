@@ -16,6 +16,7 @@ describe('Todo API Tests (Hono + D1)', () => {
 
     beforeEach(async () => {
         // Reset the database before each test
+        await env.DB.prepare(`DROP TABLE IF EXISTS subtasks`).run();
         await env.DB.prepare(`DROP TABLE IF EXISTS tasks`).run();
         await env.DB.prepare(`DROP TABLE IF EXISTS categories`).run();
         await env.DB.prepare(`DROP TABLE IF EXISTS users`).run();
@@ -49,6 +50,7 @@ describe('Todo API Tests (Hono + D1)', () => {
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
             title TEXT NOT NULL,
+            description TEXT,
             completed BOOLEAN NOT NULL DEFAULT 0,
             deadline TEXT,
             category_id INTEGER,
@@ -57,6 +59,17 @@ describe('Todo API Tests (Hono + D1)', () => {
             FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE SET NULL
           )
         `).run();
+        await env.DB.prepare(`
+          CREATE TABLE subtasks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            task_id INTEGER NOT NULL,
+            title TEXT NOT NULL,
+            completed BOOLEAN NOT NULL DEFAULT 0,
+            display_order INTEGER NOT NULL DEFAULT 0,
+            FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+          )
+        `).run();
+
         await env.DB.prepare(`INSERT INTO categories (user_id, name, display_order) VALUES (1, '仕事', 1)`).run();
         await env.DB.prepare(`INSERT INTO categories (user_id, name, display_order) VALUES (1, '個人', 2)`).run();
         await env.DB.prepare(`INSERT INTO categories (user_id, name, display_order) VALUES (1, '買い物', 3)`).run();
@@ -127,5 +140,67 @@ describe('Todo API Tests (Hono + D1)', () => {
 
         const { results } = await env.DB.prepare('SELECT * FROM categories WHERE name = ?').bind('Test Category').all();
         expect(results?.length).toBe(1);
+    });
+
+    it('POST /api/tasks/update/:id updates task details', async () => {
+        // Create task
+        await env.DB.prepare(`INSERT INTO tasks (user_id, title) VALUES (1, 'Update Me')`).run();
+        const task = await env.DB.prepare('SELECT id FROM tasks WHERE title = ?').bind('Update Me').first() as any;
+
+        const request = new IncomingRequest(`http://localhost/api/tasks/update/${task.id}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Cookie': `auth_token=${authToken}`
+            },
+            body: JSON.stringify({
+                title: 'Updated Title',
+                description: 'Updated Description'
+            })
+        });
+
+        const ctx = createExecutionContext();
+        const response = await worker.fetch(request, env as unknown as Env, ctx);
+        await waitOnExecutionContext(ctx);
+        expect(response.status).toBe(200);
+
+        const updated = await env.DB.prepare('SELECT title, description FROM tasks WHERE id = ?').bind(task.id).first() as any;
+        expect(updated.title).toBe('Updated Title');
+        expect(updated.description).toBe('Updated Description');
+    });
+
+    it('Subtask CRUD operations', async () => {
+        // 1. Create task
+        await env.DB.prepare(`INSERT INTO tasks (user_id, title) VALUES (1, 'Parent Task')`).run();
+        const task = await env.DB.prepare('SELECT id FROM tasks WHERE title = ?').bind('Parent Task').first() as any;
+
+        // 2. Add subtask
+        const addReq = new IncomingRequest('http://localhost/api/subtasks/add', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Cookie': `auth_token=${authToken}`
+            },
+            body: JSON.stringify({ task_id: task.id, title: 'Sub 1' })
+        });
+        await worker.fetch(addReq, env as unknown as Env, createExecutionContext());
+
+        // 3. Get subtasks
+        const getReq = new IncomingRequest(`http://localhost/api/subtasks/${task.id}`, {
+            headers: { 'Cookie': `auth_token=${authToken}` }
+        });
+        const getRes = await worker.fetch(getReq, env as unknown as Env, createExecutionContext());
+        const subtasks = await getRes.json() as any[];
+        expect(subtasks.length).toBe(1);
+        expect(subtasks[0].title).toBe('Sub 1');
+
+        // 4. Toggle subtask
+        const toggleReq = new IncomingRequest(`http://localhost/api/subtasks/toggle/${subtasks[0].id}`, {
+            method: 'POST',
+            headers: { 'Cookie': `auth_token=${authToken}` }
+        });
+        const toggleRes = await worker.fetch(toggleReq, env as unknown as Env, createExecutionContext());
+        const toggleData = await toggleRes.json() as { completed: boolean };
+        expect(toggleData.completed).toBe(true);
     });
 });
