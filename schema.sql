@@ -1,11 +1,12 @@
--- Drop tables in correct order to avoid foreign key constraint errors
-DROP TABLE IF EXISTS subtasks;
-DROP TABLE IF EXISTS tasks;
-DROP TABLE IF EXISTS categories;
-DROP TABLE IF EXISTS users;
+-- Database Schema (Data preservation friendly)
+-- Do NOT use DROP TABLE unless explicitly requested for a fresh start.
+-- DROP TABLE IF EXISTS subtasks;
+-- DROP TABLE IF EXISTS tasks;
+-- DROP TABLE IF EXISTS categories;
+-- DROP TABLE IF EXISTS users;
 
 -- Users table (For GitHub/Google OAuth)
-CREATE TABLE users (
+CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   provider TEXT NOT NULL,          -- 'github' or 'google'
   provider_id TEXT NOT NULL,       -- ID from the provider
@@ -16,7 +17,7 @@ CREATE TABLE users (
 );
 
 -- Categories table
-CREATE TABLE categories (
+CREATE TABLE IF NOT EXISTS categories (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id INTEGER NOT NULL,        -- 追加: ユーザー紐付け
   name TEXT NOT NULL,
@@ -25,7 +26,7 @@ CREATE TABLE categories (
 );
 
 -- Tasks table
-CREATE TABLE tasks (
+CREATE TABLE IF NOT EXISTS tasks (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id INTEGER NOT NULL,        -- 追加: ユーザー紐付け
   title TEXT NOT NULL,
@@ -39,7 +40,7 @@ CREATE TABLE tasks (
 );
 
 -- Subtasks table (New)
-CREATE TABLE subtasks (
+CREATE TABLE IF NOT EXISTS subtasks (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   task_id INTEGER NOT NULL,
   title TEXT NOT NULL,
@@ -47,3 +48,4 @@ CREATE TABLE subtasks (
   display_order INTEGER NOT NULL DEFAULT 0,
   FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
 );
+Core%SAME%
